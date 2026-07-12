@@ -1,0 +1,15 @@
+{
+	"files.associations": {
+		"*.h": "cpp",
+		"*.cpp": "cpp",
+		"*.inl": "cpp"
+	},
+	"files.exclude": {
+		"**/Binaries": true,
+		"**/DerivedDataCache": true,
+		"**/Intermediate": false,
+		"**/Saved": true
+	},
+	"C_Cpp.default.compileCommands": "${workspaceFolder}/.vscode/compileCommands_BigDogBarkBarkBark.json",
+	"C_Cpp.errorSquiggles": "enabled"
+}

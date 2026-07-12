@@ -15,6 +15,9 @@ Saved/
 
 # Build files
 Build/*
+compile_commands.json
+.vscode/compileCommands_*
+.vscode/compileCommands_Default/
 
 # Ignore generated files
 *.opensdf

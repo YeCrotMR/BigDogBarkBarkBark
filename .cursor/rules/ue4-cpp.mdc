@@ -1,0 +1,18 @@
+---
+description: Unreal Engine 4.27 C++ development conventions for BigDogBarkBarkBark
+globs: Source/**/*.h,Source/**/*.cpp,Source/**/*.cs
+alwaysApply: false
+---
+
+# UE4 C++ 开发规范
+
+- 引擎版本：UE 4.27，模块名：`BigDogBarkBarkBark`
+- API 宏：`BIGDOGBARKBARKBARK_API`
+- 头文件使用 `#pragma once`，包含 `.generated.h` 放在头文件末尾
+- 类命名：`A` Actor、`U` UObject、`F` 结构体、`E` 枚举、`I` 接口
+- 使用 `UCLASS()` / `USTRUCT()` / `UENUM()` + `GENERATED_BODY()` 宏
+- 成员暴露给蓝图用 `UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "...")`
+- 函数暴露给蓝图用 `UFUNCTION(BlueprintCallable, Category = "...")`
+- 优先在 `.h` 声明、`.cpp` 实现；避免在头文件写复杂逻辑
+- 不修改 `Content/` 下的 `.uasset` 二进制文件
+- 新增模块依赖在 `BigDogBarkBarkBark.Build.cs` 的 `PublicDependencyModuleNames` 中添加

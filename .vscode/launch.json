@@ -1,0 +1,128 @@
+{
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "BigDogBarkBarkBark (Debug)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBark Win64 Debug Build",
+			"program": "D:\\UE\\UEproject\\BigDogBarkBarkBark\\Binaries\\Win64\\UE4-Win64-Debug.exe",
+			"args": [
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBark (DebugGame)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBark Win64 DebugGame Build",
+			"program": "D:\\UE\\UEproject\\BigDogBarkBarkBark\\Binaries\\Win64\\UE4-Win64-DebugGame.exe",
+			"args": [
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBark (Development)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBark Win64 Development Build",
+			"program": "D:\\UE\\UEproject\\BigDogBarkBarkBark\\Binaries\\Win64\\UE4.exe",
+			"args": [
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBark (Shipping)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBark Win64 Shipping Build",
+			"program": "D:\\UE\\UEproject\\BigDogBarkBarkBark\\Binaries\\Win64\\UE4-Win64-Shipping.exe",
+			"args": [
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBark (Test)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBark Win64 Test Build",
+			"program": "D:\\UE\\UEproject\\BigDogBarkBarkBark\\Binaries\\Win64\\UE4-Win64-Test.exe",
+			"args": [
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBarkEditor (Debug)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBarkEditor Win64 Debug Build",
+			"program": "D:\\UE\\UE_4.27\\Engine\\Binaries\\Win64\\UE4Editor-Win64-Debug.exe",
+			"args": [
+				"D:\\UE\\UEproject\\BigDogBarkBarkBark\\BigDogBarkBarkBark.uproject"
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBarkEditor (DebugGame)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBarkEditor Win64 DebugGame Build",
+			"program": "D:\\UE\\UE_4.27\\Engine\\Binaries\\Win64\\UE4Editor-Win64-DebugGame.exe",
+			"args": [
+				"D:\\UE\\UEproject\\BigDogBarkBarkBark\\BigDogBarkBarkBark.uproject"
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "BigDogBarkBarkBarkEditor (Development)",
+			"request": "launch",
+			"preLaunchTask": "BigDogBarkBarkBarkEditor Win64 Development Build",
+			"program": "D:\\UE\\UE_4.27\\Engine\\Binaries\\Win64\\UE4Editor.exe",
+			"args": [
+				"D:\\UE\\UEproject\\BigDogBarkBarkBark\\BigDogBarkBarkBark.uproject"
+			],
+			"cwd": "D:\\UE\\UE_4.27",
+			"stopAtEntry": false,
+			"externalConsole": true,
+			"type": "cppvsdbg",
+			"visualizerFile": "D:\\UE\\UE_4.27\\Engine\\Extras\\VisualStudioDebugging\\UE4.natvis"
+		},
+		{
+			"name": "Generate Project Files",
+			"type": "clr",
+			"request": "launch",
+			"program": "D:\\UE\\UE_4.27\\Engine\\Binaries\\DotNET\\UnrealBuildTool.exe",
+			"console": "externalTerminal",
+			"args": [
+				"-projectfiles",
+				"-vscode",
+				"-project=D:\\UE\\UEproject\\BigDogBarkBarkBark\\BigDogBarkBarkBark.uproject",
+				"-game",
+				"-engine"
+			],
+			"internalConsoleOptions": "openOnSessionStart",
+			"cwd": "D:\\UE\\UE_4.27"
+		}
+	]
+}
