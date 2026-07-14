@@ -8,7 +8,27 @@ public class BigDogBarkBarkBark : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
+		PublicIncludePaths.AddRange(new string[]
+		{
+			ModuleDirectory,
+			System.IO.Path.Combine(ModuleDirectory, "Core"),
+			System.IO.Path.Combine(ModuleDirectory, "Lane"),
+			System.IO.Path.Combine(ModuleDirectory, "Unit"),
+			System.IO.Path.Combine(ModuleDirectory, "Building"),
+			System.IO.Path.Combine(ModuleDirectory, "Wave"),
+			System.IO.Path.Combine(ModuleDirectory, "UI")
+		});
+
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"UMG",
+			"Slate",
+			"SlateCore"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 	}
