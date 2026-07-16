@@ -32,6 +32,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
 	FRotator GetRotationAtDistance(float Distance) const;
 
+	/** Closest spline distance to a world position (for coop / node placement). */
+	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
+	float GetDistanceForWorldLocation(const FVector& WorldLocation) const;
+
 	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
 	ARTSResourceNode* FindNearestResourceNode(float FromDistance) const;
 

@@ -49,6 +49,16 @@ FRotator ARTSLaneSpline::GetRotationAtDistance(float Distance) const
 	return Spline->GetRotationAtDistanceAlongSpline(Clamped, ESplineCoordinateSpace::World);
 }
 
+float ARTSLaneSpline::GetDistanceForWorldLocation(const FVector& WorldLocation) const
+{
+	if (!Spline)
+	{
+		return 0.f;
+	}
+	const float InputKey = Spline->FindInputKeyClosestToWorldLocation(WorldLocation);
+	return Spline->GetDistanceAlongSplineAtSplineInputKey(InputKey);
+}
+
 void ARTSLaneSpline::RegisterResourceNode(ARTSResourceNode* Node)
 {
 	if (!Node)

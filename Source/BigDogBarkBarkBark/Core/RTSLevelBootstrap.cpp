@@ -74,7 +74,7 @@ void ARTSLevelBootstrap::EnsureLevel1Layout()
 		}
 	}
 
-	const FVector CoopLoc = Origin + FVector(0.f, -200.f, 0.f);
+	const FVector CoopLoc = CreatedLanes[0]->GetLocationAtDistance(0.f);
 	ARTSBaseBuilding* Coop = World->SpawnActor<ARTSBaseBuilding>(CoopLoc, FRotator::ZeroRotator, Params);
 	if (Coop)
 	{

@@ -8,9 +8,11 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Animation/AnimSequence.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 
 ARTSUnitBase::ARTSUnitBase()
@@ -78,13 +80,15 @@ void ARTSUnitBase::InitializeUnit(ERTSUnitType InType, ARTSLaneSpline* Lane, flo
 	bHasUsedAmbush = false;
 	bFoxBossSummonTriggered = false;
 	EffectiveAttackCooldown = AttackCooldown;
+	SplineTravelDir = (Team == ERTSTeam::Farm) ? 1.f : -1.f;
 	ApplyWorkModeCollision();
 	ApplyTeamAppearance();
+	CacheWalkAnimFromMesh();
+	PlayWalkAnimation();
 
 	if (AssignedLane)
 	{
-		SetActorLocation(AssignedLane->GetLocationAtDistance(DistanceAlongSpline) + FVector(0.f, 0.f, 60.f));
-		SetActorRotation(AssignedLane->GetRotationAtDistance(DistanceAlongSpline));
+		ApplySplineTransform();
 	}
 
 	if (Team == ERTSTeam::Farm && WorkMode == EUnitWorkMode::Collect)
@@ -234,7 +238,17 @@ void ARTSUnitBase::SetSelectedHighlight(bool bSelected)
 
 void ARTSUnitBase::EnterState(ERTSUnitState NewState)
 {
+	const ERTSUnitState OldState = UnitState;
 	UnitState = NewState;
+
+	if (NewState == ERTSUnitState::Collecting)
+	{
+		PlayCollectAnimation();
+	}
+	else if (OldState == ERTSUnitState::Collecting && NewState != ERTSUnitState::Dead)
+	{
+		RestoreWalkAnimation();
+	}
 }
 
 void ARTSUnitBase::Tick(float DeltaSeconds)
@@ -263,6 +277,14 @@ void ARTSUnitBase::Tick(float DeltaSeconds)
 			{
 				CurrentTarget = Enemy;
 				EnterState(ERTSUnitState::Combat);
+			}
+			else if (Team == ERTSTeam::Wild && IsInAttackRangeOfCore())
+			{
+				CurrentTarget = FindCoreBuilding();
+				if (CurrentTarget)
+				{
+					EnterState(ERTSUnitState::Combat);
+				}
 			}
 			else if (UnitState == ERTSUnitState::Moving)
 			{
@@ -339,7 +361,7 @@ void ARTSUnitBase::ResolveCombatSpacing(float DesiredDelta)
 	DistanceAlongSpline = FMath::Clamp(Candidate, 0.f, LaneLen);
 }
 
-void ARTSUnitBase::ApplySplineTransform()
+void ARTSUnitBase::ApplySplineTransform(bool bApplyTravelFacing)
 {
 	if (!AssignedLane)
 	{
@@ -348,31 +370,27 @@ void ARTSUnitBase::ApplySplineTransform()
 	const FVector Loc = AssignedLane->GetLocationAtDistance(DistanceAlongSpline) + FVector(0.f, 0.f, 60.f);
 	SetActorLocation(Loc, false, nullptr, ETeleportType::TeleportPhysics);
 
+	if (!bApplyTravelFacing)
+	{
+		return;
+	}
+
 	FRotator Rot = AssignedLane->GetRotationAtDistance(DistanceAlongSpline);
-
-	// Face travel direction on the spline (spline tangent = increasing distance).
-	bool bFaceReverse = false;
-	if (Team == ERTSTeam::Wild)
-	{
-		bFaceReverse = true;
-	}
-	else if (Team == ERTSTeam::Farm && bReachedLaneEnd)
-	{
-		bFaceReverse = true;
-	}
-	else if (Team == ERTSTeam::Farm && WorkMode == EUnitWorkMode::Collect)
-	{
-		const float Goal = (bMovingTowardResource && TargetResource)
-			? TargetResource->SplineDistance
-			: 0.f;
-		bFaceReverse = Goal < DistanceAlongSpline - 1.f;
-	}
-
-	if (bFaceReverse)
+	if (SplineTravelDir < 0.f)
 	{
 		Rot.Yaw += 180.f;
 	}
 	SetActorRotation(Rot);
+}
+
+void ARTSUnitBase::FaceWorldLocation(const FVector& WorldLocation)
+{
+	FVector ToTarget = WorldLocation - GetActorLocation();
+	ToTarget.Z = 0.f;
+	if (!ToTarget.IsNearlyZero())
+	{
+		SetActorRotation(FRotator(0.f, ToTarget.Rotation().Yaw, 0.f));
+	}
 }
 
 void ARTSUnitBase::TickMovement(float DeltaSeconds)
@@ -397,6 +415,7 @@ void ARTSUnitBase::TickMovement(float DeltaSeconds)
 
 		const float Goal = bMovingTowardResource ? TargetResource->SplineDistance : 0.f;
 		const float Dir = FMath::Sign(Goal - DistanceAlongSpline);
+		SplineTravelDir = FMath::IsNearlyZero(Dir) ? SplineTravelDir : Dir;
 		if (FMath::IsNearlyZero(Dir))
 		{
 			if (bMovingTowardResource)
@@ -433,27 +452,39 @@ void ARTSUnitBase::TickMovement(float DeltaSeconds)
 	}
 	else
 	{
-		// Farm combat: advance toward enemy end (increasing distance)
-		// Wild: advance toward base (decreasing distance)
-		const float Dir = (Team == ERTSTeam::Farm) ? 1.f : -1.f;
-		ResolveCombatSpacing(Dir * Stats.MoveSpeed * DeltaSeconds);
+		if (Team == ERTSTeam::Wild)
+		{
+			ARTSBaseBuilding* Core = FindCoreBuilding();
+			const float CoreDist = GetCoreBuildingLaneDistance();
 
-		if (Team == ERTSTeam::Farm && DistanceAlongSpline >= LaneLen - 5.f)
-		{
-			DistanceAlongSpline = LaneLen;
-			bReachedLaneEnd = true;
-			EnterState(ERTSUnitState::Guarding);
-		}
-		else if (Team == ERTSTeam::Wild && DistanceAlongSpline <= 5.f)
-		{
-			DistanceAlongSpline = 0.f;
-			if (ARTSBaseBuilding* Core = FindCoreBuilding())
+			if (Core && IsInAttackRangeOfCore())
 			{
+				DistanceAlongSpline = FMath::Clamp(CoreDist, 0.f, LaneLen);
 				CurrentTarget = Core;
 				EnterState(ERTSUnitState::Combat);
 			}
 			else
 			{
+				SplineTravelDir = -1.f;
+				ResolveCombatSpacing(-Stats.MoveSpeed * DeltaSeconds);
+				if (DistanceAlongSpline < CoreDist)
+				{
+					DistanceAlongSpline = CoreDist;
+				}
+			}
+		}
+		else
+		{
+			// Farm combat: advance toward enemy end (increasing distance)
+			const float Dir = 1.f;
+			SplineTravelDir = Dir;
+			ResolveCombatSpacing(Dir * Stats.MoveSpeed * DeltaSeconds);
+
+			if (DistanceAlongSpline >= LaneLen - 5.f)
+			{
+				DistanceAlongSpline = LaneLen;
+				bReachedLaneEnd = true;
+				SplineTravelDir = -1.f;
 				EnterState(ERTSUnitState::Guarding);
 			}
 		}
@@ -490,7 +521,7 @@ void ARTSUnitBase::TickCombat(float DeltaSeconds)
 	if (!CurrentTarget || !CanAttackTarget(CurrentTarget))
 	{
 		CurrentTarget = FindClosestEnemy();
-		if (!CurrentTarget && Team == ERTSTeam::Wild)
+		if (!CurrentTarget && Team == ERTSTeam::Wild && IsInAttackRangeOfCore())
 		{
 			CurrentTarget = FindCoreBuilding();
 		}
@@ -499,6 +530,31 @@ void ARTSUnitBase::TickCombat(float DeltaSeconds)
 			EnterState(bReachedLaneEnd ? ERTSUnitState::Guarding : ERTSUnitState::Moving);
 			return;
 		}
+	}
+
+	if (ARTSBaseBuilding* Building = Cast<ARTSBaseBuilding>(CurrentTarget))
+	{
+		if (!IsInAttackRangeOfCore())
+		{
+			CurrentTarget = nullptr;
+			EnterState(ERTSUnitState::Moving);
+			return;
+		}
+
+		ApplySplineTransform(false);
+		FaceWorldLocation(Building->GetActorLocation());
+
+		if (AttackCooldownRemaining > 0.f)
+		{
+			return;
+		}
+
+		const float Damage = ComputeOutgoingDamage();
+		TryAmbushOnFirstHit();
+		AttackCooldownRemaining = EffectiveAttackCooldown;
+		PlayAttackAnimation();
+		Building->ReceiveDamage(Damage, this);
+		return;
 	}
 
 	const float Dist = FVector::Dist(GetActorLocation(), CurrentTarget->GetActorLocation());
@@ -510,18 +566,35 @@ void ARTSUnitBase::TickCombat(float DeltaSeconds)
 			if (TargetUnit->AssignedLane == AssignedLane)
 			{
 				const float Dir = FMath::Sign(TargetUnit->DistanceAlongSpline - DistanceAlongSpline);
+				if (!FMath::IsNearlyZero(Dir))
+				{
+					SplineTravelDir = Dir;
+				}
 				ResolveCombatSpacing(Dir * Stats.MoveSpeed * DeltaSeconds);
 			}
 		}
 		else if (Team == ERTSTeam::Wild)
 		{
+			SplineTravelDir = -1.f;
 			ResolveCombatSpacing(-Stats.MoveSpeed * DeltaSeconds);
 		}
 		ApplySplineTransform(); // keep +Z ground offset (bare spline Z sinks meshes)
 		return;
 	}
 
-	// Stay snapped to lane height while trading blows
+	// In melee range: face the target along the lane
+	if (ARTSUnitBase* TargetUnit = Cast<ARTSUnitBase>(CurrentTarget))
+	{
+		if (TargetUnit->AssignedLane == AssignedLane)
+		{
+			const float Dir = FMath::Sign(TargetUnit->DistanceAlongSpline - DistanceAlongSpline);
+			if (!FMath::IsNearlyZero(Dir))
+			{
+				SplineTravelDir = Dir;
+			}
+		}
+	}
+
 	ApplySplineTransform();
 
 	if (AttackCooldownRemaining > 0.f)
@@ -532,14 +605,180 @@ void ARTSUnitBase::TickCombat(float DeltaSeconds)
 	const float Damage = ComputeOutgoingDamage();
 	TryAmbushOnFirstHit();
 	AttackCooldownRemaining = EffectiveAttackCooldown;
+	PlayAttackAnimation();
 
 	if (ARTSUnitBase* TargetUnit = Cast<ARTSUnitBase>(CurrentTarget))
 	{
 		TargetUnit->TakeDamageAmount(Damage, this);
 	}
-	else if (ARTSBaseBuilding* Building = Cast<ARTSBaseBuilding>(CurrentTarget))
+}
+
+void ARTSUnitBase::CacheWalkAnimFromMesh()
+{
+	if (WalkAnim || !Mesh)
 	{
-		Building->ReceiveDamage(Damage, this);
+		return;
+	}
+	if (UAnimationAsset* Current = Mesh->AnimationData.AnimToPlay)
+	{
+		WalkAnim = Cast<UAnimSequence>(Current);
+	}
+}
+
+void ARTSUnitBase::PlayWalkAnimation()
+{
+	if (!Mesh || !WalkAnim || bPlayingAttackAnim || UnitState == ERTSUnitState::Dead)
+	{
+		return;
+	}
+	if (UnitState == ERTSUnitState::Collecting)
+	{
+		PlayCollectAnimation();
+		return;
+	}
+	Mesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	Mesh->PlayAnimation(WalkAnim, true);
+}
+
+void ARTSUnitBase::PlayAttackAnimation()
+{
+	if (!Mesh || !AttackAnim)
+	{
+		return;
+	}
+
+	CacheWalkAnimFromMesh();
+	bPlayingAttackAnim = true;
+	Mesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	Mesh->PlayAnimation(AttackAnim, false);
+
+	float Duration = AttackAnim->SequenceLength;
+	if (Duration < 0.15f)
+	{
+		Duration = 0.15f;
+	}
+	// Don't let a long attack clip block the next hit for too long.
+	Duration = FMath::Min(Duration, FMath::Max(0.2f, EffectiveAttackCooldown * 0.9f));
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AttackAnimTimer);
+		World->GetTimerManager().SetTimer(
+			AttackAnimTimer,
+			this,
+			&ARTSUnitBase::RestoreWalkAnimation,
+			Duration,
+			false);
+	}
+}
+
+void ARTSUnitBase::PlayCollectAnimation()
+{
+	if (!Mesh || !CollectAnim)
+	{
+		return;
+	}
+	CacheWalkAnimFromMesh();
+	bPlayingAttackAnim = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AttackAnimTimer);
+	}
+	Mesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	Mesh->PlayAnimation(CollectAnim, true);
+}
+
+void ARTSUnitBase::RestoreWalkAnimation()
+{
+	bPlayingAttackAnim = false;
+	if (!IsAlive() || UnitState == ERTSUnitState::Dead)
+	{
+		return;
+	}
+	if (UnitState == ERTSUnitState::Collecting)
+	{
+		PlayCollectAnimation();
+		return;
+	}
+	PlayWalkAnimation();
+}
+
+void ARTSUnitBase::PlayDeathAnimation()
+{
+	if (!Mesh || !DeathAnim)
+	{
+		return;
+	}
+
+	bPlayingAttackAnim = false;
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AttackAnimTimer);
+	}
+
+	Mesh->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	Mesh->PlayAnimation(DeathAnim, false);
+}
+
+void ARTSUnitBase::Die()
+{
+	if (UnitState == ERTSUnitState::Dead)
+	{
+		return;
+	}
+
+	EnterState(ERTSUnitState::Dead);
+	CurrentTarget = nullptr;
+	TargetResource = nullptr;
+
+	if (ARTSGameMode* GM = Cast<ARTSGameMode>(UGameplayStatics::GetGameMode(this)))
+	{
+		GM->NotifyUnitDied(this);
+	}
+
+	SetActorEnableCollision(false);
+	PrimaryActorTick.bCanEverTick = false;
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(AttackAnimTimer);
+		World->GetTimerManager().ClearTimer(DeathAnimTimer);
+	}
+
+	float Lifespan = 1.5f;
+	if (DeathAnim && Mesh)
+	{
+		PlayDeathAnimation();
+		Lifespan = FMath::Max(1.2f, DeathAnim->SequenceLength + 0.8f);
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				DeathAnimTimer,
+				this,
+				&ARTSUnitBase::FinishDeath,
+				DeathAnim->SequenceLength + 0.05f,
+				false);
+		}
+	}
+	else
+	{
+		FinishDeath();
+	}
+
+	SetLifeSpan(Lifespan);
+}
+
+void ARTSUnitBase::FinishDeath()
+{
+	// Hold last death pose briefly; SetLifeSpan still removes the actor.
+	if (Mesh && DeathAnim)
+	{
+		Mesh->Stop();
+		Mesh->SetPosition(DeathAnim->SequenceLength, false);
+	}
+	else
+	{
+		SetActorHiddenInGame(true);
 	}
 }
 
@@ -604,11 +843,13 @@ ARTSBaseBuilding* ARTSUnitBase::FindCoreBuilding() const
 	TArray<AActor*> Buildings;
 	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ARTSBaseBuilding::StaticClass(), Buildings);
 	ARTSBaseBuilding* Best = nullptr;
-	float BestDistSq = PerceptionRadius * PerceptionRadius * 4.f;
+	// Wild units march far — use generous seek radius for the coop.
+	const float SeekRadius = (Team == ERTSTeam::Wild) ? 3000.f : PerceptionRadius * 2.f;
+	float BestDistSq = SeekRadius * SeekRadius;
 	for (AActor* Actor : Buildings)
 	{
 		ARTSBaseBuilding* Building = Cast<ARTSBaseBuilding>(Actor);
-		if (!Building || !Building->IsAlive())
+		if (!Building || !Building->IsAlive() || !Building->bIsCoreBuilding)
 		{
 			continue;
 		}
@@ -620,6 +861,28 @@ ARTSBaseBuilding* ARTSUnitBase::FindCoreBuilding() const
 		}
 	}
 	return Best;
+}
+
+float ARTSUnitBase::GetCoreBuildingLaneDistance() const
+{
+	ARTSBaseBuilding* Core = FindCoreBuilding();
+	if (!Core || !AssignedLane)
+	{
+		return 0.f;
+	}
+	return AssignedLane->GetDistanceForWorldLocation(Core->GetActorLocation());
+}
+
+bool ARTSUnitBase::IsInAttackRangeOfCore() const
+{
+	if (!FindCoreBuilding() || !AssignedLane)
+	{
+		return false;
+	}
+	const float CoreDist = GetCoreBuildingLaneDistance();
+	// Coop is beside the lane: attack once we reach its perpendicular foot on the spline.
+	constexpr float LaneTolerance = 40.f;
+	return FMath::Abs(DistanceAlongSpline - CoreDist) <= LaneTolerance;
 }
 
 bool ARTSUnitBase::CanAttackTarget(AActor* Target) const
@@ -694,18 +957,4 @@ void ARTSUnitBase::TryFoxBossSummon()
 			}
 		}
 	}
-}
-
-void ARTSUnitBase::Die()
-{
-	EnterState(ERTSUnitState::Dead);
-	if (ARTSGameMode* GM = Cast<ARTSGameMode>(UGameplayStatics::GetGameMode(this)))
-	{
-		GM->NotifyUnitDied(this);
-	}
-
-	SetActorHiddenInGame(true);
-	SetActorEnableCollision(false);
-	SetActorTickEnabled(false);
-	SetLifeSpan(1.5f);
 }

@@ -13,4 +13,7 @@ class BIGDOGBARKBARKBARK_API ARTSHUD : public AHUD
 
 public:
 	virtual void DrawHUD() override;
+
+protected:
+	void DrawProjectedHealth(APlayerController* PC, const FVector& WorldLoc, float Current, float Max, const FLinearColor& FillColor);
 };

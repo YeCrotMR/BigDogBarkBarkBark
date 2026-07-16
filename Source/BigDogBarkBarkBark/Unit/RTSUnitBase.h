@@ -15,6 +15,7 @@ class USkeletalMeshComponent;
 class UStaticMeshComponent;
 class UStaticMesh;
 class UMaterialInterface;
+class UAnimSequence;
 
 UCLASS()
 class BIGDOGBARKBARKBARK_API ARTSUnitBase : public APawn
@@ -70,6 +71,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane")
 	float CombatSpacing = 80.f;
 
+	/** Looping locomotion for Mesh (Use Animation Asset). If empty, uses Mesh's Anim to Play. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Anim")
+	UAnimSequence* WalkAnim = nullptr;
+
+	/** One-shot attack clip played each melee hit. Must share Mesh skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Anim")
+	UAnimSequence* AttackAnim = nullptr;
+
+	/** Looping collect / eat clip while UnitState == Collecting. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Anim")
+	UAnimSequence* CollectAnim = nullptr;
+
+	/** One-shot death / fall-down clip. Must share Mesh skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Anim")
+	UAnimSequence* DeathAnim = nullptr;
+
 	UFUNCTION(BlueprintCallable, Category = "RTS|Unit")
 	void InitializeUnit(ERTSUnitType InType, ARTSLaneSpline* Lane, float StartDistance, EUnitWorkMode InMode);
 
@@ -104,6 +121,8 @@ protected:
 
 	AActor* FindClosestEnemy() const;
 	ARTSBaseBuilding* FindCoreBuilding() const;
+	float GetCoreBuildingLaneDistance() const;
+	bool IsInAttackRangeOfCore() const;
 	bool CanAttackTarget(AActor* Target) const;
 	float ComputeOutgoingDamage();
 	void TryAmbushOnFirstHit();
@@ -111,7 +130,15 @@ protected:
 	void TryFoxBossSummon();
 
 	void ResolveCombatSpacing(float DesiredDelta);
-	void ApplySplineTransform();
+	void ApplySplineTransform(bool bApplyTravelFacing = true);
+	void FaceWorldLocation(const FVector& WorldLocation);
+	void CacheWalkAnimFromMesh();
+	void PlayWalkAnimation();
+	void PlayAttackAnimation();
+	void PlayCollectAnimation();
+	void PlayDeathAnimation();
+	void RestoreWalkAnimation();
+	void FinishDeath();
 
 	UPROPERTY()
 	UStaticMesh* FarmPlaceholderMesh = nullptr;
@@ -135,4 +162,9 @@ protected:
 	bool bHasUsedAmbush = false;
 	bool bFoxBossSummonTriggered = false;
 	float EffectiveAttackCooldown = 1.5f;
+	bool bPlayingAttackAnim = false;
+	FTimerHandle AttackAnimTimer;
+	FTimerHandle DeathAnimTimer;
+	/** +1 = toward increasing spline distance, -1 = toward base/spawn end. */
+	float SplineTravelDir = 1.f;
 };
