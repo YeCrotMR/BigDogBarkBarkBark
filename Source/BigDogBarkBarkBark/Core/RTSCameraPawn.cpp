@@ -11,6 +11,10 @@ ARTSCameraPawn::ARTSCameraPawn()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	// Focus pawn is a free-look point — never collide with void fillers / props.
+	SpawnCollisionHandlingMethod = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	SetActorEnableCollision(false);
+
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
 
@@ -21,7 +25,6 @@ ARTSCameraPawn::ARTSCameraPawn()
 	SpringArm->bInheritPitch = false;
 	SpringArm->bInheritYaw = false;
 	SpringArm->bInheritRoll = false;
-	// Pitch: top-down tilt. Yaw +90 = view rotated 90° CCW when looking from above.
 	SpringArm->SetRelativeRotation(FRotator(-70.f, -90.f, 0.f));
 
 	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
@@ -29,6 +32,8 @@ ARTSCameraPawn::ARTSCameraPawn()
 
 	Movement = CreateDefaultSubobject<UFloatingPawnMovement>(TEXT("Movement"));
 	Movement->MaxSpeed = MoveSpeed;
+	// Don't sweep against WorldStatic (outside meshes would shrink the pan range).
+	Movement->bSnapToPlaneAtStart = false;
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -38,7 +43,15 @@ ARTSCameraPawn::ARTSCameraPawn()
 void ARTSCameraPawn::BeginPlay()
 {
 	Super::BeginPlay();
+	SetActorEnableCollision(false);
 	SpawnLocation = GetActorLocation();
+	ClampLateralPosition();
+}
+
+void ARTSCameraPawn::SetFocusLocation(const FVector& WorldLocation)
+{
+	SetActorLocation(WorldLocation, false, nullptr, ETeleportType::TeleportPhysics);
+	SpawnLocation = WorldLocation;
 	ClampLateralPosition();
 }
 
@@ -61,11 +74,15 @@ void ARTSCameraPawn::MoveRight(float Value)
 	{
 		return;
 	}
-	// Flatten camera right onto ground so A/D stay screen-left/right after yaw turn.
+
+	// Direct move — bypasses FloatingPawnMovement sweeps that hit outside geometry.
 	const FVector MoveDir = Camera
 		? FVector::VectorPlaneProject(Camera->GetRightVector(), FVector::UpVector).GetSafeNormal()
 		: GetActorRightVector();
-	AddMovementInput(MoveDir, Value);
+	const float DeltaSeconds = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
+	const FVector Delta = MoveDir * (Value * MoveSpeed * DeltaSeconds);
+	SetActorLocation(GetActorLocation() + Delta, false, nullptr, ETeleportType::TeleportPhysics);
+	ClampLateralPosition();
 }
 
 void ARTSCameraPawn::ZoomCamera(float Value)
@@ -84,8 +101,8 @@ void ARTSCameraPawn::ClampLateralPosition()
 		return;
 	}
 
-	const float MinX = SpawnLocation.X + FMath::Min(LateralPanMin, LateralPanMax);
-	const float MaxX = SpawnLocation.X + FMath::Max(LateralPanMin, LateralPanMax);
+	const float MinX = FMath::Min(LateralPanMin, LateralPanMax);
+	const float MaxX = FMath::Max(LateralPanMin, LateralPanMax);
 
 	FVector Loc = GetActorLocation();
 	const float ClampedX = FMath::Clamp(Loc.X, MinX, MaxX);

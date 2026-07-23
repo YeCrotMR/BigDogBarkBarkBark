@@ -89,6 +89,7 @@ protected:
 	void OnLeftClick();
 	void OnRightClick();
 	void OnCancelPlacementKey();
+	void OnAdvanceDialogueKey();
 	void SelectUnitUnderCursor();
 	void HandleWorldClickForPlacement();
 	void CreateHUD();
@@ -97,6 +98,7 @@ protected:
 	void DestroyModeRing();
 	void UpdatePlacementLaneHighlight();
 	bool GetMouseWorldProbe(FVector& OutProbe) const;
+	bool IsPointerOverInteractiveUI() const;
 	ARTSUnitBase* FindNearestFarmUnit() const;
 	ARTSUnitBase* SpawnRecruit(ERTSUnitType Type, int32 LaneIndex);
 

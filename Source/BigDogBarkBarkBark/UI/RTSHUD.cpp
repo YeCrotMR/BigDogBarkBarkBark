@@ -3,8 +3,10 @@
 #include "RTSHUD.h"
 #include "RTSGameMode.h"
 #include "RTSPlayerController.h"
+#include "RTSGameHUD.h"
 #include "RTSUnitBase.h"
 #include "RTSBaseBuilding.h"
+#include "RTSResourceNode.h"
 #include "RTSWaveManager.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
@@ -61,6 +63,44 @@ void ARTSHUD::DrawProjectedHealth(APlayerController* PC, const FVector& WorldLoc
 	Canvas->DrawItem(Text);
 }
 
+void ARTSHUD::DrawProjectedLabel(APlayerController* PC, const FVector& WorldLoc, const FString& Text, const FLinearColor& Color)
+{
+	if (!Canvas || !PC || Text.IsEmpty())
+	{
+		return;
+	}
+
+	FVector2D ScreenPos;
+	if (!PC->ProjectWorldLocationToScreen(WorldLoc, ScreenPos, true))
+	{
+		return;
+	}
+
+	constexpr float Margin = 50.f;
+	if (ScreenPos.X < -Margin || ScreenPos.Y < -Margin
+		|| ScreenPos.X > Canvas->SizeX + Margin || ScreenPos.Y > Canvas->SizeY + Margin)
+	{
+		return;
+	}
+
+	UFont* Font = GEngine ? GEngine->GetLargeFont() : nullptr;
+	if (!Font)
+	{
+		Font = GEngine ? GEngine->GetMediumFont() : nullptr;
+	}
+	if (!Font)
+	{
+		return;
+	}
+
+	FCanvasTextItem Item(FVector2D(ScreenPos.X, ScreenPos.Y), FText::FromString(Text), Font, Color);
+	Item.bCentreX = true;
+	Item.bCentreY = true;
+	Item.EnableShadow(FLinearColor::Black);
+	Item.Scale = FVector2D(1.7f, 1.7f);
+	Canvas->DrawItem(Item);
+}
+
 void ARTSHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -79,7 +119,12 @@ void ARTSHUD::DrawHUD()
 	ARTSGameMode* GM = Cast<ARTSGameMode>(UGameplayStatics::GetGameMode(GetWorld()));
 	ARTSPlayerController* PC = Cast<ARTSPlayerController>(GetOwningPlayerController());
 
-	// World-space health bars for all units and buildings
+	// Hide world HUD chrome while dialogue / result overlays are up.
+	if (PC && PC->HUDWidget && (PC->HUDWidget->IsDialogueActive() || PC->HUDWidget->IsResultScreenVisible()))
+	{
+		return;
+	}
+
 	if (PC)
 	{
 		TArray<AActor*> Units;
@@ -117,6 +162,24 @@ void ARTSHUD::DrawHUD()
 			const FVector WorldLoc = Building->GetActorLocation() + FVector(0.f, 0.f, 200.f);
 			DrawProjectedHealth(PC, WorldLoc, Building->CurrentHealth, Building->MaxHealth,
 				FLinearColor(0.82f, 0.82f, 0.82f, 1.f));
+
+			if (Building->bIsCoreBuilding)
+			{
+				DrawProjectedLabel(PC, WorldLoc + FVector(0.f, 0.f, 40.f), TEXT("Chicken Coop"),
+					FLinearColor(1.f, 0.9f, 0.35f));
+			}
+		}
+
+		TArray<AActor*> Resources;
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), ARTSResourceNode::StaticClass(), Resources);
+		for (AActor* Actor : Resources)
+		{
+			if (!Actor)
+			{
+				continue;
+			}
+			const FVector WorldLoc = Actor->GetActorLocation() + FVector(0.f, 0.f, 120.f);
+			DrawProjectedLabel(PC, WorldLoc, TEXT("Fodder Point"), FLinearColor(0.4f, 1.f, 0.45f));
 		}
 	}
 
@@ -133,7 +196,6 @@ void ARTSHUD::DrawHUD()
 		Y += Line;
 	};
 
-	// Compact debug strip — main UI is URTSGameHUD UMG top bar.
 	if (!GM)
 	{
 		DrawLine(TEXT("ERROR: GameMode is NOT RTSGameMode"), FLinearColor::Red);

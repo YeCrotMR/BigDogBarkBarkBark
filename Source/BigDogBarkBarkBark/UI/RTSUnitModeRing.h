@@ -58,6 +58,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "RTS|UI")
 	float GroundOffsetZ = 8.f;
 
+	/** World-space distance to push Combat/Collect toward screen-bottom, away from the unit. */
 	UPROPERTY(EditAnywhere, Category = "RTS|UI")
-	float ButtonOffsetY = -90.f;
+	float ButtonScreenOffset = 140.f;
 };

@@ -37,13 +37,15 @@ ARTSUnitModeRing::ARTSUnitModeRing()
 
 	ModeWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("ModeWidget"));
 	ModeWidget->SetupAttachment(SceneRoot);
-	ModeWidget->SetWidgetSpace(EWidgetSpace::World);
-	ModeWidget->SetDrawAtDesiredSize(true);
-	ModeWidget->SetPivot(FVector2D(0.5f, 0.5f));
+	// Screen space: always faces camera and keeps a reliable clickable size.
+	ModeWidget->SetWidgetSpace(EWidgetSpace::Screen);
+	ModeWidget->SetDrawAtDesiredSize(false);
+	ModeWidget->SetDrawSize(FVector2D(260.f, 64.f));
+	// Anchor at top-center so the panel hangs below the offset point.
+	ModeWidget->SetPivot(FVector2D(0.5f, 0.f));
 	ModeWidget->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	ModeWidget->SetRelativeLocation(FVector(0.f, ButtonOffsetY, 2.f));
-	// Flat on ground so top-down camera can click.
-	ModeWidget->SetRelativeRotation(FRotator(-90.f, 0.f, 0.f));
+	ModeWidget->SetRelativeLocation(FVector(0.f, -140.f, 12.f));
+	ModeWidget->SetRelativeRotation(FRotator::ZeroRotator);
 	ModeWidget->SetWidgetClass(URTSUnitModePanel::StaticClass());
 }
 
@@ -66,11 +68,16 @@ void ARTSUnitModeRing::BeginPlay()
 
 	if (ModeWidget)
 	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+		{
+			ModeWidget->SetOwnerPlayer(PC->GetLocalPlayer());
+		}
 		ModeWidget->InitWidget();
 		ModePanel = Cast<URTSUnitModePanel>(ModeWidget->GetUserWidgetObject());
 		if (ModePanel)
 		{
 			ModePanel->SetOwnerRing(this);
+			ModePanel->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
 }
@@ -107,10 +114,33 @@ void ARTSUnitModeRing::SyncTransformToUnit()
 	SetActorLocation(Loc);
 	// Keep ring axis-aligned on ground (no pitch/roll).
 	SetActorRotation(FRotator(0.f, 0.f, 0.f));
-	if (ModeWidget)
+
+	if (!ModeWidget)
 	{
-		ModeWidget->SetRelativeLocation(FVector(0.f, ButtonOffsetY, 2.f));
+		return;
 	}
+
+	// Push buttons toward the bottom of the screen so they don't cover the unit mesh.
+	FVector FlatDown(0.f, -1.f, 0.f);
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		FVector CamLoc;
+		FRotator CamRot;
+		PC->GetPlayerViewPoint(CamLoc, CamRot);
+		const FVector CamUp = CamRot.RotateVector(FVector::UpVector);
+		FlatDown = FVector(-CamUp.X, -CamUp.Y, 0.f);
+		if (!FlatDown.Normalize())
+		{
+			const FVector CamRight = CamRot.RotateVector(FVector::RightVector);
+			FlatDown = FVector(-CamRight.Y, CamRight.X, 0.f);
+			if (!FlatDown.Normalize())
+			{
+				FlatDown = FVector(0.f, -1.f, 0.f);
+			}
+		}
+	}
+
+	ModeWidget->SetWorldLocation(Unit->GetActorLocation() + FlatDown * ButtonScreenOffset + FVector(0.f, 0.f, 10.f));
 }
 
 void ARTSUnitModeRing::RefreshPanelHighlight()

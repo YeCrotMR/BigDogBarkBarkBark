@@ -5,6 +5,7 @@
 #include "RTSResourceNode.h"
 #include "RTSBaseBuilding.h"
 #include "RTSGameMode.h"
+#include "RTSBossGroundRing.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -101,6 +102,53 @@ void ARTSUnitBase::InitializeUnit(ERTSUnitType InType, ARTSLaneSpline* Lane, flo
 	{
 		EnterState(ERTSUnitState::Moving);
 	}
+
+	if (Stats.bIsBoss)
+	{
+		EnsureBossRing();
+	}
+	else
+	{
+		DestroyBossRing();
+	}
+}
+
+void ARTSUnitBase::EnsureBossRing()
+{
+	if (BossRing.IsValid())
+	{
+		BossRing->SetFollowUnit(this);
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	Params.Owner = this;
+	ARTSBossGroundRing* Ring = World->SpawnActor<ARTSBossGroundRing>(
+		ARTSBossGroundRing::StaticClass(),
+		GetActorLocation(),
+		FRotator::ZeroRotator,
+		Params);
+	if (Ring)
+	{
+		Ring->SetFollowUnit(this);
+		BossRing = Ring;
+	}
+}
+
+void ARTSUnitBase::DestroyBossRing()
+{
+	if (ARTSBossGroundRing* Ring = BossRing.Get())
+	{
+		Ring->Destroy();
+	}
+	BossRing.Reset();
 }
 
 void ARTSUnitBase::SetWorkMode(EUnitWorkMode NewMode)
@@ -726,6 +774,8 @@ void ARTSUnitBase::Die()
 	{
 		return;
 	}
+
+	DestroyBossRing();
 
 	EnterState(ERTSUnitState::Dead);
 	CurrentTarget = nullptr;

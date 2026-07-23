@@ -74,6 +74,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|UI")
 	TSubclassOf<URTSGameHUD> HUDWidgetClass;
 
+	/** If set, Victory "Next Level" opens this map; otherwise reloads current. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Flow")
+	FName NextLevelName;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Flow")
+	bool bWavesStarted = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Flow")
+	bool bIntroStarted = false;
+
+	/** Called when HUD is ready — starts intro dialogue. */
+	UFUNCTION(BlueprintCallable, Category = "RTS|Flow")
+	void NotifyHUDReady();
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|Wave")
+	void StartWavesIfNeeded();
+
+	/** Wait for play camera, enter play briefly, then pause for intro. */
+	void TryEnterPlayThenIntro();
+
+	/** After a short play settle, pause and show intro dialogue. */
+	void BeginPausedIntroDialogue();
+
+	FTimerHandle IntroStartTimer;
+	int32 IntroStartAttempts = 0;
+
 	/** Picks Rabbit/Chicken/... class, else FarmUnitClass. */
 	UFUNCTION(BlueprintCallable, Category = "RTS|Spawn")
 	TSubclassOf<ARTSUnitBase> ResolveFarmUnitClass(ERTSUnitType Type) const;

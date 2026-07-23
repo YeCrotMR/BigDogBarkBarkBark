@@ -14,6 +14,7 @@
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 
 ARTSGameMode::ARTSGameMode()
 {
@@ -54,6 +55,8 @@ void ARTSGameMode::InitGame(const FString& MapName, const FString& Options, FStr
 	bGameOver = false;
 	bVictory = false;
 	bWavesCleared = false;
+	bWavesStarted = false;
+	bIntroStarted = false;
 }
 
 void ARTSGameMode::BeginPlay()
@@ -82,6 +85,91 @@ void ARTSGameMode::BeginPlay()
 
 	CacheLevelActors();
 
+	// Waves start after intro dialogue finishes (see StartWavesIfNeeded).
+}
+
+void ARTSGameMode::NotifyHUDReady()
+{
+	if (bIntroStarted || bGameOver)
+	{
+		return;
+	}
+
+	IntroStartAttempts = 0;
+	TryEnterPlayThenIntro();
+}
+
+void ARTSGameMode::TryEnterPlayThenIntro()
+{
+	if (bIntroStarted || bGameOver)
+	{
+		return;
+	}
+
+	ARTSPlayerController* PC = Cast<ARTSPlayerController>(UGameplayStatics::GetPlayerController(this, 0));
+	ARTSCameraPawn* Cam = PC ? Cast<ARTSCameraPawn>(PC->GetPawn()) : nullptr;
+
+	// Pawn often spawns after PC BeginPlay — wait until the play camera exists.
+	if (!PC || !PC->HUDWidget || !Cam)
+	{
+		++IntroStartAttempts;
+		if (IntroStartAttempts > 60)
+		{
+			bIntroStarted = true;
+			StartWavesIfNeeded();
+			return;
+		}
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				IntroStartTimer, this, &ARTSGameMode::TryEnterPlayThenIntro, 0.05f, false);
+		}
+		return;
+	}
+
+	// 1) Enter play first — same RTS camera / HUD as gameplay (no special framing).
+	bIntroStarted = true;
+	UGameplayStatics::SetGamePaused(this, false);
+	PC->SetViewTarget(Cam);
+	PC->HUDWidget->SetGameplayHudVisible(true);
+
+	// 2) Brief settle on the play view, then pause for intro dialogue.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			IntroStartTimer, this, &ARTSGameMode::BeginPausedIntroDialogue, 0.2f, false);
+	}
+	else
+	{
+		BeginPausedIntroDialogue();
+	}
+}
+
+void ARTSGameMode::BeginPausedIntroDialogue()
+{
+	if (bGameOver)
+	{
+		return;
+	}
+
+	ARTSPlayerController* PC = Cast<ARTSPlayerController>(UGameplayStatics::GetPlayerController(this, 0));
+	if (!PC || !PC->HUDWidget)
+	{
+		StartWavesIfNeeded();
+		return;
+	}
+
+	// 3) Pause → intro dialogue → FinishDialogue unpauses and starts waves.
+	PC->HUDWidget->PlayDialogueSequence(ERTSDialogueKind::Intro);
+}
+
+void ARTSGameMode::StartWavesIfNeeded()
+{
+	if (bWavesStarted)
+	{
+		return;
+	}
+	bWavesStarted = true;
 	if (WaveManager)
 	{
 		WaveManager->StartWaves();
@@ -459,7 +547,7 @@ void ARTSGameMode::NotifyCoreDestroyed()
 	{
 		if (PC->HUDWidget)
 		{
-			PC->HUDWidget->ShowDefeatScreen();
+			PC->HUDWidget->PlayDialogueSequence(ERTSDialogueKind::Defeat);
 		}
 	}
 }
@@ -480,6 +568,15 @@ void ARTSGameMode::TryVictory()
 	{
 		bGameOver = true;
 		bVictory = true;
+		UGameplayStatics::SetGamePaused(this, true);
+
+		if (ARTSPlayerController* PC = Cast<ARTSPlayerController>(UGameplayStatics::GetPlayerController(this, 0)))
+		{
+			if (PC->HUDWidget)
+			{
+				PC->HUDWidget->PlayDialogueSequence(ERTSDialogueKind::Victory);
+			}
+		}
 	}
 }
 

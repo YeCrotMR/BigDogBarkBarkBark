@@ -10,6 +10,7 @@
 class ARTSLaneSpline;
 class ARTSResourceNode;
 class ARTSBaseBuilding;
+class ARTSBossGroundRing;
 class UCapsuleComponent;
 class USkeletalMeshComponent;
 class UStaticMeshComponent;
@@ -108,6 +109,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RTS|Unit")
 	void SetSelectedHighlight(bool bSelected);
 
+	void EnsureBossRing();
+	void DestroyBossRing();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -154,6 +158,9 @@ protected:
 
 	UPROPERTY()
 	ARTSResourceNode* TargetResource = nullptr;
+
+	UPROPERTY()
+	TWeakObjectPtr<ARTSBossGroundRing> BossRing;
 
 	float AttackCooldownRemaining = 0.f;
 	float CollectTimer = 0.f;

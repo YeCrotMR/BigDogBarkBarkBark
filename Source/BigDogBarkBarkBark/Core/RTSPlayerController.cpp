@@ -12,6 +12,8 @@
 #include "InputCoreTypes.h"
 #include "CollisionQueryParams.h"
 #include "Engine/EngineTypes.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Layout/WidgetPath.h"
 
 ARTSPlayerController::ARTSPlayerController()
 {
@@ -82,6 +84,10 @@ void ARTSPlayerController::CreateHUD()
 		{
 			GEngine->AddOnScreenDebugMessage(20, 5.f, FColor::Green, TEXT("RTS HUD loaded"));
 		}
+		if (ARTSGameMode* GM = Cast<ARTSGameMode>(UGameplayStatics::GetGameMode(this)))
+		{
+			GM->NotifyHUDReady();
+		}
 	}
 	else if (GEngine)
 	{
@@ -114,16 +120,34 @@ void ARTSPlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::F2, IE_Pressed, this, &ARTSPlayerController::HotkeyUpgradeChicken);
 	InputComponent->BindKey(EKeys::F3, IE_Pressed, this, &ARTSPlayerController::HotkeyUpgradeSheep);
 	InputComponent->BindKey(EKeys::F4, IE_Pressed, this, &ARTSPlayerController::HotkeyUpgradePig);
+	InputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &ARTSPlayerController::OnAdvanceDialogueKey);
 }
 
 void ARTSPlayerController::OnLeftClick()
 {
+	if (HUDWidget && HUDWidget->IsDialogueActive())
+	{
+		HUDWidget->AdvanceDialogue();
+		return;
+	}
+	if (IsPointerOverInteractiveUI())
+	{
+		return;
+	}
 	if (bPlacementPending)
 	{
 		HandleWorldClickForPlacement();
 		return;
 	}
 	SelectUnitUnderCursor();
+}
+
+void ARTSPlayerController::OnAdvanceDialogueKey()
+{
+	if (HUDWidget && HUDWidget->IsDialogueActive())
+	{
+		HUDWidget->AdvanceDialogue();
+	}
 }
 
 void ARTSPlayerController::OnRightClick()
@@ -134,6 +158,55 @@ void ARTSPlayerController::OnRightClick()
 void ARTSPlayerController::OnCancelPlacementKey()
 {
 	CancelPlacement();
+}
+
+bool ARTSPlayerController::IsPointerOverInteractiveUI() const
+{
+	if (!FSlateApplication::IsInitialized())
+	{
+		return false;
+	}
+
+	const FWidgetPath Path = FSlateApplication::Get().LocateWindowUnderMouse(
+		FSlateApplication::Get().GetCursorPos(),
+		FSlateApplication::Get().GetInteractiveTopLevelWindows());
+	if (!Path.IsValid())
+	{
+		return false;
+	}
+
+	for (int32 Index = Path.Widgets.Num() - 1; Index >= 0; --Index)
+	{
+		const TSharedRef<SWidget>& Widget = Path.Widgets[Index].Widget;
+		if (!Widget->GetVisibility().IsVisible() || !Widget->IsInteractable())
+		{
+			continue;
+		}
+
+		const FName Type = Widget->GetType();
+		const FString TypeStr = Type.ToString();
+		if (TypeStr.Contains(TEXT("SViewport"))
+			|| TypeStr.Contains(TEXT("SGameLayerManager"))
+			|| TypeStr.Contains(TEXT("SObjectWidget"))
+			|| TypeStr.Contains(TEXT("SOverlay"))
+			|| TypeStr.Contains(TEXT("SCanvas"))
+			|| TypeStr.Contains(TEXT("SConstraintCanvas"))
+			|| TypeStr.Contains(TEXT("SVerticalBox"))
+			|| TypeStr.Contains(TEXT("SHorizontalBox"))
+			|| TypeStr.Contains(TEXT("SBox")))
+		{
+			continue;
+		}
+
+		if (TypeStr.Contains(TEXT("SButton"))
+			|| TypeStr.Contains(TEXT("SCheckBox"))
+			|| TypeStr.Contains(TEXT("SSlider"))
+			|| TypeStr.Contains(TEXT("SEditableText")))
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void ARTSPlayerController::ClearSelectedUnit()
@@ -675,19 +748,13 @@ void ARTSPlayerController::UpgradeUnitType(ERTSUnitType Type)
 		return;
 	}
 
-	if (GM->TryUpgradeUnitType(Type) && GEngine)
+	if (GM->TryUpgradeUnitType(Type))
 	{
-		const TCHAR* Name = TEXT("Unit");
-		switch (Type)
+		const int32 NewLevel = GM->GetUnitUpgradeLevel(Type);
+		if (HUDWidget)
 		{
-		case ERTSUnitType::Rabbit: Name = TEXT("Rabbit"); break;
-		case ERTSUnitType::Chicken: Name = TEXT("Chicken"); break;
-		case ERTSUnitType::Sheep: Name = TEXT("Sheep"); break;
-		case ERTSUnitType::Pig: Name = TEXT("Pig"); break;
-		default: break;
+			HUDWidget->ShowUpgradeToast(Type, NewLevel);
 		}
-		GEngine->AddOnScreenDebugMessage(5, 3.f, FColor::Cyan,
-			FString::Printf(TEXT("%s upgraded to Lv%d (-%d soul)"), Name, GM->GetUnitUpgradeLevel(Type), Cost));
 	}
 }
 

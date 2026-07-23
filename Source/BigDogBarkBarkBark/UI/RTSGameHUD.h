@@ -12,7 +12,17 @@ class UButton;
 class UVerticalBox;
 class UHorizontalBox;
 class UCanvasPanel;
+class UCanvasPanelSlot;
 class UBorder;
+class USizeBox;
+
+UENUM(BlueprintType)
+enum class ERTSDialogueKind : uint8
+{
+	Intro,
+	Victory,
+	Defeat
+};
 
 UCLASS()
 class BIGDOGBARKBARKBARK_API URTSGameHUD : public UUserWidget
@@ -24,7 +34,29 @@ public:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	void PlayDialogueSequence(ERTSDialogueKind Kind);
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	void AdvanceDialogue();
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	bool IsDialogueActive() const { return bDialogueActive; }
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	bool IsResultScreenVisible() const { return bResultShown; }
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	void ShowResultScreen(bool bVictory);
+
+	/** Legacy entry — routes to defeat dialogue if needed. Prefer PlayDialogueSequence. */
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
 	void ShowDefeatScreen();
+
+	void SetGameplayHudVisible(bool bVisible);
+
+	/** Top-center drop toast after a successful soul upgrade. */
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	void ShowUpgradeToast(ERTSUnitType Type, int32 NewLevel);
 
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
@@ -33,11 +65,21 @@ protected:
 	void BindFallbackButtonHandlers();
 	void RefreshTexts();
 	void RefreshCardHighlights();
+	void EnsureDialogueOverlay();
 	void EnsureResultOverlay();
-	void RefreshResultOverlay();
+	void EnsureUpgradeToast();
+	void TickUpgradeToast(float DeltaTime);
+	static FString UnitTypeDisplayName(ERTSUnitType Type);
+	static FString UpgradeBonusText(int32 NewLevel);
+	void ApplyDialogueLine();
+	void FinishDialogue();
+	void EnterUIOnlyMode();
+	void EnterGameAndUIMode();
+	void LoadDialogueLines(ERTSDialogueKind Kind);
 
 	UButton* MakeLabeledButton(UPanelWidget* Parent, const FString& Label, FName Name);
-	UVerticalBox* MakeUnitSlot(UPanelWidget* Parent, const FString& Title, FName ButtonName, UButton*& OutButton, UTextBlock*& OutCostText);
+	UBorder* MakeHeaderBar(UPanelWidget* Parent, const FString& Title, UTextBlock*& OutText, FName TextName);
+	void MakeUnitSlot(UPanelWidget* Parent, const FString& Title, FName ButtonName, UButton*& OutButton, UTextBlock*& OutCostText);
 	UHorizontalBox* MakeUpgradeRow(UPanelWidget* Parent, const FString& Title, FName ButtonName, UButton*& OutButton, UTextBlock*& OutLevelText);
 
 	UFUNCTION() void OnRecruitRabbit();
@@ -48,7 +90,10 @@ protected:
 	UFUNCTION() void OnUpgradeChicken();
 	UFUNCTION() void OnUpgradeSheep();
 	UFUNCTION() void OnUpgradePig();
+	UFUNCTION() void OnDialogueClicked();
+	UFUNCTION() void OnPrimaryResult();
 	UFUNCTION() void OnReplay();
+	UFUNCTION() void OnNextLevel();
 	UFUNCTION() void OnQuit();
 
 	UPROPERTY(meta = (BindWidgetOptional))
@@ -111,18 +156,76 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* UpgradePigText = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
-	UBorder* DefeatPanel = nullptr;
+	// Dialogue overlay
+	UPROPERTY()
+	UBorder* DialoguePanel = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
-	UTextBlock* DefeatTitleText = nullptr;
+	UPROPERTY()
+	UBorder* PortraitBlock = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
-	UButton* BtnReplay = nullptr;
+	UPROPERTY()
+	UBorder* NamePlate = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY()
+	UTextBlock* DialogueNameText = nullptr;
+
+	UPROPERTY()
+	UTextBlock* DialogueBodyText = nullptr;
+
+	UPROPERTY()
+	UButton* BtnDialogueAdvance = nullptr;
+
+	// Result overlay (victory / defeat)
+	UPROPERTY()
+	UBorder* ResultPanel = nullptr;
+
+	UPROPERTY()
+	UTextBlock* ResultTitleText = nullptr;
+
+	UPROPERTY()
+	UButton* BtnPrimaryResult = nullptr;
+
+	UPROPERTY()
+	UTextBlock* PrimaryResultLabel = nullptr;
+
+	UPROPERTY()
 	UButton* BtnQuit = nullptr;
 
+	UPROPERTY()
+	UBorder* WavePanel = nullptr;
+
+	UPROPERTY()
+	UBorder* ObjectivePanel = nullptr;
+
+	UPROPERTY()
+	USizeBox* SideBarsBox = nullptr;
+
+	UPROPERTY()
+	UCanvasPanel* DialogueBottomChrome = nullptr;
+
+	// Upgrade toast (drops from top center)
+	UPROPERTY()
+	UBorder* UpgradeToastPanel = nullptr;
+
+	UPROPERTY()
+	UTextBlock* UpgradeToastTitleText = nullptr;
+
+	UPROPERTY()
+	UTextBlock* UpgradeToastBodyText = nullptr;
+
+	UPROPERTY()
+	UCanvasPanelSlot* UpgradeToastSlot = nullptr;
+
 	bool bBuiltFallbackLayout = false;
-	bool bDefeatShown = false;
+	bool bDialogueActive = false;
+	bool bResultShown = false;
+	bool bResultIsVictory = false;
+	bool bUpgradeToastActive = false;
+	ERTSDialogueKind ActiveDialogueKind = ERTSDialogueKind::Intro;
+	int32 DialogueLineIndex = 0;
+	float UpgradeToastAge = 0.f;
+	float UpgradeToastRestY = 28.f;
+
+	TArray<FString> DialogueSpeakers;
+	TArray<FString> DialogueBodies;
 };

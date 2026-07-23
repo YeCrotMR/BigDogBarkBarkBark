@@ -16,4 +16,5 @@ public:
 
 protected:
 	void DrawProjectedHealth(APlayerController* PC, const FVector& WorldLoc, float Current, float Max, const FLinearColor& FillColor);
+	void DrawProjectedLabel(APlayerController* PC, const FVector& WorldLoc, const FString& Text, const FLinearColor& Color);
 };

@@ -42,20 +42,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Camera")
 	float MaxArmLength = 3500.f;
 
-	/** Clamp A/D pan relative to spawn along world X (screen left/right with default yaw). */
+	/** Clamp A/D pan to absolute world X (screen left/right with default yaw). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Camera|Bounds")
 	bool bClampLateralPan = true;
 
-	/** How far left of spawn the camera may go (negative = left). */
+	/** World-X minimum (left). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Camera|Bounds")
-	float LateralPanMin = -2000.f;
+	float LateralPanMin = -2520.f;
 
-	/** How far right of spawn the camera may go (positive = right). */
+	/** World-X maximum (right). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Camera|Bounds")
-	float LateralPanMax = 2000.f;
+	float LateralPanMax = 2730.f;
 
 	void MoveRight(float Value);
 	void ZoomCamera(float Value);
+
+	/** Move focus to a world point and refresh pan bounds (used at level start). */
+	UFUNCTION(BlueprintCallable, Category = "RTS|Camera")
+	void SetFocusLocation(const FVector& WorldLocation);
 
 protected:
 	virtual void BeginPlay() override;
