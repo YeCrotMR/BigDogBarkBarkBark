@@ -122,52 +122,36 @@ void ARTSHUD::DrawHUD()
 
 	float Y = 40.f;
 	const float X = 40.f;
-	const float Line = 28.f;
+	const float Line = 26.f;
 
 	auto DrawLine = [&](const FString& Text, const FLinearColor& Color = FLinearColor::White)
 	{
 		FCanvasTextItem Item(FVector2D(X, Y), FText::FromString(Text), Font, Color);
 		Item.EnableShadow(FLinearColor::Black);
-		Item.Scale = FVector2D(1.25f, 1.25f);
+		Item.Scale = FVector2D(1.1f, 1.1f);
 		Canvas->DrawItem(Item);
 		Y += Line;
 	};
 
-	DrawLine(TEXT("=== BigDog RTS Level 1 ==="), FLinearColor::Yellow);
-
-	if (GM)
-	{
-		DrawLine(FString::Printf(TEXT("Fodder: %d"), GM->Fodder), FLinearColor::Green);
-		if (ARTSWaveManager* WM = GM->GetWaveManager())
-		{
-			DrawLine(FString::Printf(TEXT("Wave: %d / Alive enemies: %d"),
-				WM->CurrentWaveIndex + 1,
-				WM->AliveEnemies));
-		}
-		const FText Status = GM->GetStatusText();
-		if (!Status.IsEmpty())
-		{
-			DrawLine(Status.ToString(), GM->bVictory ? FLinearColor::Green : FLinearColor::Red);
-		}
-	}
-	else
+	// Compact debug strip — main UI is URTSGameHUD UMG top bar.
+	if (!GM)
 	{
 		DrawLine(TEXT("ERROR: GameMode is NOT RTSGameMode"), FLinearColor::Red);
-		DrawLine(TEXT("World Settings -> GameMode Override -> RTSGameMode"), FLinearColor::Red);
+		DrawLine(TEXT("World Settings -> GameMode Override -> RTSGameMode / BP_RTSGameMode"), FLinearColor::Red);
+		return;
 	}
 
-	if (PC)
+	const FText Status = GM->GetStatusText();
+	if (!Status.IsEmpty())
 	{
-		FString Mode = TEXT("-");
-		if (PC->SelectedUnit && PC->SelectedUnit->IsAlive())
-		{
-			Mode = PC->SelectedUnit->WorkMode == EUnitWorkMode::Collect ? TEXT("Collect") : TEXT("Combat");
-		}
-		DrawLine(FString::Printf(TEXT("Lane: %d | Unit mode: %s"), PC->SelectedLaneIndex, *Mode));
+		DrawLine(Status.ToString(), GM->bVictory ? FLinearColor::Green : FLinearColor::Red);
 	}
 
-	Y += 10.f;
-	DrawLine(TEXT("1 Rabbit | 2 Chicken | 3 Sheep | 4 Pig"), FLinearColor(0.8f, 0.9f, 1.f));
-	DrawLine(TEXT("Q/E Lane | T Mode | A/D Camera | Wheel Zoom"), FLinearColor(0.8f, 0.9f, 1.f));
-	DrawLine(TEXT("Console: AddFodderCmd 100 | SkipWave"), FLinearColor(0.7f, 0.7f, 0.7f));
+	if (PC && PC->bPlacementPending)
+	{
+		DrawLine(TEXT("Placement: click a lane on the map"), FLinearColor::Yellow);
+	}
+
+	Y = Canvas->SizeY - 40.f;
+	DrawLine(TEXT("A/D Camera | Wheel Zoom | Esc/RMB cancel"), FLinearColor(0.65f, 0.65f, 0.65f));
 }

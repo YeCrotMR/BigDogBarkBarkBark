@@ -36,6 +36,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Economy")
 	int32 KillFodderDropAmount = 5;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Economy")
+	int32 Soul = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Economy")
+	int32 MaxSoul = 999;
+
 	/** Fallback if a per-type class below is empty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Spawn")
 	TSubclassOf<ARTSUnitBase> FarmUnitClass;
@@ -88,11 +94,38 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RTS|Economy")
 	bool TrySpendFodder(int32 Amount);
 
+	UFUNCTION(BlueprintCallable, Category = "RTS|Economy")
+	void AddSoul(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|Economy")
+	bool TrySpendSoul(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|Progression")
+	int32 GetUnitUpgradeLevel(ERTSUnitType Type) const;
+
+	/** Cost to purchase the next tier (TargetLevel 1/2/3 -> 2/4/6). */
+	UFUNCTION(BlueprintCallable, Category = "RTS|Progression")
+	int32 GetUpgradeCost(int32 TargetLevel) const;
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|Progression")
+	int32 GetEffectiveFodderCost(ERTSUnitType Type) const;
+
+	/** Returns false if maxed, not recruitable, or not enough soul. */
+	UFUNCTION(BlueprintCallable, Category = "RTS|Progression")
+	bool TryUpgradeUnitType(ERTSUnitType Type);
+
 	UFUNCTION(BlueprintCallable, Category = "RTS|Recruit")
 	ARTSUnitBase* RecruitUnit(ERTSUnitType Type, int32 LaneIndex, EUnitWorkMode Mode = EUnitWorkMode::Combat);
 
 	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
 	ARTSLaneSpline* GetLaneByIndex(int32 LaneIndex) const;
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
+	int32 GetLaneCount() const { return Lanes.Num(); }
+
+	/** Array index of a lane actor in GameMode::Lanes, or -1. */
+	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
+	int32 FindLaneArrayIndex(const ARTSLaneSpline* Lane) const;
 
 	UFUNCTION(BlueprintCallable, Category = "RTS|Events")
 	void NotifyUnitSpawned(ARTSUnitBase* Unit);
@@ -108,6 +141,12 @@ public:
 
 	UFUNCTION(Exec, Category = "RTS|Debug")
 	void AddFodderCmd(int32 Amount = 50);
+
+	UFUNCTION(Exec, Category = "RTS|Debug")
+	void AddSoulCmd(int32 Amount = 10);
+
+	UFUNCTION(Exec, Category = "RTS|Debug")
+	void UpgradeUnitCmd(int32 UnitTypeIndex = 1);
 
 	UFUNCTION(Exec, Category = "RTS|Debug")
 	void SkipWave();
@@ -126,14 +165,32 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
 
+	void EnsureCoreClasses();
 	void CacheLevelActors();
 	void TryVictory();
+	int32 GetSoulDropForUnit(const ARTSUnitBase* Unit) const;
+	void ApplyUpgradeToStats(FRTSUnitStats& Stats, int32 Level) const;
+	int32* FindUpgradeLevelMutable(ERTSUnitType Type);
+	const int32* FindUpgradeLevelConst(ERTSUnitType Type) const;
 
 	UPROPERTY()
 	TArray<ARTSLaneSpline*> Lanes;
 
 	UPROPERTY()
 	ARTSBaseBuilding* CoreBuilding = nullptr;
+
+	/** Per farm unit type upgrade tier (0-3). Avoid TMap<enum> for BP GameMode stability. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Progression")
+	int32 UpgradeLevelRabbit = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Progression")
+	int32 UpgradeLevelChicken = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Progression")
+	int32 UpgradeLevelSheep = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Progression")
+	int32 UpgradeLevelPig = 0;
 
 	bool bWavesCleared = false;
 };

@@ -23,6 +23,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane")
 	int32 LaneIndex = 0;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane|Highlight")
+	FLinearColor HighlightColor = FLinearColor(0.2f, 0.95f, 1.f, 1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane|Highlight")
+	float HighlightThickness = 12.f;
+
 	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
 	float GetSplineLength() const;
 
@@ -39,6 +45,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
 	ARTSResourceNode* FindNearestResourceNode(float FromDistance) const;
 
+	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
+	void SetHighlighted(bool bInHighlighted);
+
+	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
+	bool IsHighlighted() const { return bHighlighted; }
+
 	void RegisterResourceNode(ARTSResourceNode* Node);
 	void UnregisterResourceNode(ARTSResourceNode* Node);
 
@@ -46,7 +58,12 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+
+	void DrawHighlight() const;
 
 	UPROPERTY()
 	TArray<TWeakObjectPtr<ARTSResourceNode>> ResourceNodes;
+
+	bool bHighlighted = false;
 };

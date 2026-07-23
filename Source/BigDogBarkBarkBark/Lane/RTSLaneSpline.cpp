@@ -3,10 +3,13 @@
 #include "RTSLaneSpline.h"
 #include "RTSResourceNode.h"
 #include "Components/SplineComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Engine/World.h"
 
 ARTSLaneSpline::ARTSLaneSpline()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	Spline = CreateDefaultSubobject<USplineComponent>(TEXT("Spline"));
 	SetRootComponent(Spline);
@@ -22,6 +25,67 @@ ARTSLaneSpline::ARTSLaneSpline()
 void ARTSLaneSpline::BeginPlay()
 {
 	Super::BeginPlay();
+}
+
+void ARTSLaneSpline::SetHighlighted(bool bInHighlighted)
+{
+	if (bHighlighted == bInHighlighted)
+	{
+		return;
+	}
+	bHighlighted = bInHighlighted;
+	SetActorTickEnabled(bHighlighted);
+	if (Spline)
+	{
+		Spline->SetDrawDebug(bHighlighted);
+	}
+	if (bHighlighted)
+	{
+		DrawHighlight();
+	}
+}
+
+void ARTSLaneSpline::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (bHighlighted)
+	{
+		DrawHighlight();
+	}
+}
+
+void ARTSLaneSpline::DrawHighlight() const
+{
+	UWorld* World = GetWorld();
+	if (!World || !Spline)
+	{
+		return;
+	}
+
+	const float Len = GetSplineLength();
+	if (Len < 1.f)
+	{
+		return;
+	}
+
+	const FColor Color = HighlightColor.ToFColor(true);
+	constexpr float Step = 80.f;
+	FVector Prev = GetLocationAtDistance(0.f) + FVector(0.f, 0.f, 40.f);
+	for (float D = Step; D <= Len; D += Step)
+	{
+		const FVector Next = GetLocationAtDistance(D) + FVector(0.f, 0.f, 40.f);
+		DrawDebugLine(World, Prev, Next, Color, false, -1.f, 0, HighlightThickness);
+		Prev = Next;
+	}
+	const FVector End = GetLocationAtDistance(Len) + FVector(0.f, 0.f, 40.f);
+	if (!Prev.Equals(End, 1.f))
+	{
+		DrawDebugLine(World, Prev, End, Color, false, -1.f, 0, HighlightThickness);
+	}
+
+	// End markers so the lane reads clearly from top-down camera
+	DrawDebugSphere(World, GetLocationAtDistance(0.f) + FVector(0.f, 0.f, 40.f), 35.f, 8, Color, false, -1.f, 0, 2.f);
+	DrawDebugSphere(World, End, 35.f, 8, Color, false, -1.f, 0, 2.f);
 }
 
 float ARTSLaneSpline::GetSplineLength() const

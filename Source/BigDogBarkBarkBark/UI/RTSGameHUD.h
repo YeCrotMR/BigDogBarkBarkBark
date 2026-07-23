@@ -11,8 +11,8 @@ class UTextBlock;
 class UButton;
 class UVerticalBox;
 class UHorizontalBox;
-class ARTSGameMode;
-class ARTSPlayerController;
+class UCanvasPanel;
+class UBorder;
 
 UCLASS()
 class BIGDOGBARKBARKBARK_API URTSGameHUD : public UUserWidget
@@ -23,38 +23,106 @@ public:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
+	UFUNCTION(BlueprintCallable, Category = "RTS|UI")
+	void ShowDefeatScreen();
+
 protected:
-	void RebuildLayout();
+	virtual TSharedRef<SWidget> RebuildWidget() override;
+
+	void RebuildLayoutIfNeeded();
+	void BindFallbackButtonHandlers();
 	void RefreshTexts();
+	void RefreshCardHighlights();
+	void EnsureResultOverlay();
+	void RefreshResultOverlay();
 
-	UFUNCTION()
-	void OnRecruitRabbit();
-	UFUNCTION()
-	void OnRecruitChicken();
-	UFUNCTION()
-	void OnRecruitSheep();
-	UFUNCTION()
-	void OnRecruitPig();
-	UFUNCTION()
-	void OnLane0();
-	UFUNCTION()
-	void OnLane1();
-	UFUNCTION()
-	void OnModeCombat();
-	UFUNCTION()
-	void OnModeCollect();
+	UButton* MakeLabeledButton(UPanelWidget* Parent, const FString& Label, FName Name);
+	UVerticalBox* MakeUnitSlot(UPanelWidget* Parent, const FString& Title, FName ButtonName, UButton*& OutButton, UTextBlock*& OutCostText);
+	UHorizontalBox* MakeUpgradeRow(UPanelWidget* Parent, const FString& Title, FName ButtonName, UButton*& OutButton, UTextBlock*& OutLevelText);
 
-	UButton* MakeButton(UPanelWidget* Parent, const FString& Label, FName Name);
+	UFUNCTION() void OnRecruitRabbit();
+	UFUNCTION() void OnRecruitChicken();
+	UFUNCTION() void OnRecruitSheep();
+	UFUNCTION() void OnRecruitPig();
+	UFUNCTION() void OnUpgradeRabbit();
+	UFUNCTION() void OnUpgradeChicken();
+	UFUNCTION() void OnUpgradeSheep();
+	UFUNCTION() void OnUpgradePig();
+	UFUNCTION() void OnReplay();
+	UFUNCTION() void OnQuit();
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* FodderText = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* SoulText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* WaveText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* StatusText = nullptr;
 
-	UPROPERTY()
-	UTextBlock* SelectionText = nullptr;
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnRabbit = nullptr;
 
-	UPROPERTY()
-	UVerticalBox* RootBox = nullptr;
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnChicken = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnSheep = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnPig = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* CostRabbitText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* CostChickenText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* CostSheepText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* CostPigText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnUpgradeRabbit = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnUpgradeChicken = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnUpgradeSheep = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnUpgradePig = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* UpgradeRabbitText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* UpgradeChickenText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* UpgradeSheepText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* UpgradePigText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UBorder* DefeatPanel = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* DefeatTitleText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnReplay = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UButton* BtnQuit = nullptr;
+
+	bool bBuiltFallbackLayout = false;
+	bool bDefeatShown = false;
 };

@@ -9,7 +9,7 @@
 
 ARTSCameraPawn::ARTSCameraPawn()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
 	SetRootComponent(SceneRoot);
@@ -33,6 +33,19 @@ ARTSCameraPawn::ARTSCameraPawn()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
+}
+
+void ARTSCameraPawn::BeginPlay()
+{
+	Super::BeginPlay();
+	SpawnLocation = GetActorLocation();
+	ClampLateralPosition();
+}
+
+void ARTSCameraPawn::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	ClampLateralPosition();
 }
 
 void ARTSCameraPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -62,4 +75,23 @@ void ARTSCameraPawn::ZoomCamera(float Value)
 		return;
 	}
 	SpringArm->TargetArmLength = FMath::Clamp(SpringArm->TargetArmLength - Value * ZoomSpeed, MinArmLength, MaxArmLength);
+}
+
+void ARTSCameraPawn::ClampLateralPosition()
+{
+	if (!bClampLateralPan)
+	{
+		return;
+	}
+
+	const float MinX = SpawnLocation.X + FMath::Min(LateralPanMin, LateralPanMax);
+	const float MaxX = SpawnLocation.X + FMath::Max(LateralPanMin, LateralPanMax);
+
+	FVector Loc = GetActorLocation();
+	const float ClampedX = FMath::Clamp(Loc.X, MinX, MaxX);
+	if (!FMath::IsNearlyEqual(Loc.X, ClampedX))
+	{
+		Loc.X = ClampedX;
+		SetActorLocation(Loc, false, nullptr, ETeleportType::TeleportPhysics);
+	}
 }
