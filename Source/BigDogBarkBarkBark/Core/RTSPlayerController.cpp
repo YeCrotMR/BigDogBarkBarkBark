@@ -14,6 +14,7 @@
 #include "Engine/EngineTypes.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Layout/WidgetPath.h"
+#include "UObject/ConstructorHelpers.h"
 
 ARTSPlayerController::ARTSPlayerController()
 {
@@ -23,6 +24,12 @@ ARTSPlayerController::ARTSPlayerController()
 	bEnableMouseOverEvents = true;
 	DefaultMouseCursor = EMouseCursor::Crosshairs;
 	HUDWidgetClass = URTSGameHUD::StaticClass();
+
+	static ConstructorHelpers::FClassFinder<URTSGameHUD> HudBP(TEXT("/Game/UI/WBP_RTSGameHUD"));
+	if (HudBP.Succeeded())
+	{
+		HUDWidgetClass = HudBP.Class;
+	}
 }
 
 void ARTSPlayerController::BeginPlay()

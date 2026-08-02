@@ -4,37 +4,85 @@
 #include "RTSGameMode.h"
 #include "RTSPlayerController.h"
 #include "RTSWaveManager.h"
+#include "RTSBaseBuilding.h"
+#include "RTSResourceNode.h"
 #include "Components/VerticalBox.h"
 #include "Components/HorizontalBox.h"
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
+#include "Components/ButtonSlot.h"
 #include "Components/Border.h"
 #include "Components/SizeBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
+#include "Components/Spacer.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Image.h"
+#include "Engine/Texture2D.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Styling/CoreStyle.h"
+#include "Styling/SlateTypes.h"
+#include "Engine/Font.h"
+#include "TextureResource.h"
 
 namespace
 {
-	FLinearColor HeaderBarBg(0.55f, 0.82f, 0.95f, 0.95f);
-	FLinearColor PanelBodyBg(0.95f, 0.78f, 0.55f, 0.92f);
-	FLinearColor WaveBarBg(0.95f, 0.95f, 0.95f, 0.95f);
-	FLinearColor CardNormalBg(0.92f, 0.72f, 0.48f, 0.95f);
-	FLinearColor CardSelectedBg(0.35f, 0.65f, 1.f, 0.95f);
+	// Farm storybook — info/cards stay readable (near-opaque); buttons may be slightly softer.
+	FLinearColor InfoBarBg(0.55f, 0.82f, 0.95f, 0.96f);
+	FLinearColor PanelBodyBg(0.98f, 0.94f, 0.86f, 0.96f);
+	FLinearColor CardNormalBg(0.94f, 0.82f, 0.58f, 0.96f);
+	FLinearColor CardSelectedBg(0.40f, 0.70f, 1.f, 0.98f);
+	FLinearColor UpgradeBtnBg(0.28f, 0.42f, 0.72f, 0.92f);
+	FLinearColor UpgradeBtnHover(0.36f, 0.52f, 0.85f, 0.95f);
+	FLinearColor DispatchBtnBg(0.18f, 0.62f, 0.32f, 0.94f);
+	FLinearColor DispatchBtnHover(0.24f, 0.74f, 0.40f, 0.96f);
+	FLinearColor IconBadgeBg(0.98f, 0.95f, 0.88f, 0.98f);
+	FLinearColor NamePlateBg(1.f, 0.92f, 0.55f, 0.98f);
+	FLinearColor DialogBoxBg(1.f, 1.f, 1.f, 0.97f);
+	FLinearColor ModalCardBg(0.98f, 0.95f, 0.88f, 0.98f);
 	FLinearColor DarkText(0.08f, 0.08f, 0.1f, 1.f);
+	FLinearColor CostOnDark(1.f, 0.96f, 0.88f, 1.f);
+	FLinearColor QuitBtnBg(0.45f, 0.48f, 0.55f, 0.94f);
+	FLinearColor QuitBtnHover(0.55f, 0.58f, 0.65f, 0.96f);
+	constexpr float RecruitIconSize = 84.f;
+	constexpr float SideBarWidth = 280.f;
+	constexpr float ActionBtnMinHeight = 38.f;
+	constexpr float DialoguePortraitSize = 400.f;
+	constexpr float DialogueNameBand = 64.f;
+	constexpr float DialogueSideMargin = 40.f;
+	constexpr float DialogueBottomMargin = 24.f;
+	constexpr float DialogueGap = 12.f;
+	constexpr int32 FontTitle = 18;
+	constexpr int32 FontBody = 16;
+	constexpr int32 FontSmall = 14;
+	constexpr int32 FontDialogueName = 28;
+	constexpr int32 FontDialogueBody = 26;
+	constexpr int32 FontWorldLabel = 24;
+	constexpr int32 FontModalTitle = 22;
 }
 
 void URTSGameHUD::NativeConstruct()
 {
 	Super::NativeConstruct();
+	// Resolve WBP bindings first so dialogue/result overlays skip C++ fallback when designed.
+	ResolveDesignerBindings();
+	EnsureHudStyleAssets();
 	EnsureDialogueOverlay();
 	EnsureResultOverlay();
 	EnsureUpgradeToast();
 	BindFallbackButtonHandlers();
+	ApplyDesignerLayout();
+	ApplyDesignerChrome();
+	ApplyUnitIcons();
+	ApplyResourceIcons();
+	EnsureWorldLabelLayer();
 	SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 }
 
@@ -49,6 +97,7 @@ TSharedRef<SWidget> URTSGameHUD::RebuildWidget()
 
 void URTSGameHUD::RebuildLayoutIfNeeded()
 {
+	// Designer WBP provides BindWidget controls — skip C++ fallback layout.
 	if (FodderText && BtnRabbit && BtnUpgradeRabbit)
 	{
 		return;
@@ -65,7 +114,7 @@ void URTSGameHUD::RebuildLayoutIfNeeded()
 
 	UBorder* WaveBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("WaveBorder"));
 	WavePanel = WaveBorder;
-	WaveBorder->SetBrushColor(WaveBarBg);
+	WaveBorder->SetBrushColor(InfoBarBg);
 	WaveBorder->SetPadding(FMargin(18.f, 6.f));
 	{
 		UCanvasPanelSlot* WaveSlot = Canvas->AddChildToCanvas(WaveBorder);
@@ -102,12 +151,13 @@ void URTSGameHUD::RebuildLayoutIfNeeded()
 		ObjSlot->SetOffsets(FMargin(12.f, 12.f, 0.f, 0.f));
 	}
 
-	UTextBlock* ObjectiveText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ObjectiveText"));
-	ObjectiveText->SetText(FText::FromString(TEXT("Objective: Protect the Chicken Coop")));
-	ObjectiveText->SetColorAndOpacity(FSlateColor(DarkText));
-	ObjectiveText->SetJustification(ETextJustify::Left);
-	ObjectiveText->SetAutoWrapText(true);
-	ObjectivePanel->SetContent(ObjectiveText);
+	UTextBlock* ObjectiveLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ObjectiveText"));
+	ObjectiveLabel->SetText(FText::FromString(TEXT("Objective: Protect the Chicken Coop")));
+	ObjectiveLabel->SetColorAndOpacity(FSlateColor(DarkText));
+	ObjectiveLabel->SetJustification(ETextJustify::Left);
+	ObjectiveLabel->SetAutoWrapText(true);
+	ObjectivePanel->SetContent(ObjectiveLabel);
+	ObjectiveText = ObjectiveLabel;
 
 	// Narrow soul + fodder column.
 	SideBarsBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("SideBarsBox"));
@@ -184,8 +234,49 @@ void URTSGameHUD::RebuildLayoutIfNeeded()
 
 void URTSGameHUD::EnsureDialogueOverlay()
 {
-	if (DialoguePanel || !WidgetTree)
+	if (!WidgetTree)
 	{
+		return;
+	}
+
+	// Designer WBP (WBP_RTSGameHUD): use authored widgets when present.
+	if (!DialoguePanel)
+	{
+		DialoguePanel = Cast<UBorder>(WidgetTree->FindWidget(TEXT("DialoguePanel")));
+	}
+	if (!DialogueNameText)
+	{
+		DialogueNameText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("DialogueNameText")));
+	}
+	if (!DialogueBodyText)
+	{
+		DialogueBodyText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("DialogueBodyText")));
+	}
+	if (!BtnDialogueAdvance)
+	{
+		BtnDialogueAdvance = Cast<UButton>(WidgetTree->FindWidget(TEXT("BtnDialogueAdvance")));
+	}
+	if (!PortraitBlock)
+	{
+		PortraitBlock = Cast<UBorder>(WidgetTree->FindWidget(TEXT("PortraitBlock")));
+	}
+	if (!NamePlate)
+	{
+		NamePlate = Cast<UBorder>(WidgetTree->FindWidget(TEXT("NamePlate")));
+	}
+	if (!DialogueBottomChrome)
+	{
+		DialogueBottomChrome = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("DialogueBottomChrome")));
+	}
+	if (!DialoguePortrait)
+	{
+		DialoguePortrait = Cast<UImage>(WidgetTree->FindWidget(TEXT("DialoguePortrait")));
+	}
+
+	if (DialoguePanel)
+	{
+		DialoguePanel->SetVisibility(ESlateVisibility::Collapsed);
+		ApplyDialogueDesignerLayout();
 		return;
 	}
 
@@ -223,43 +314,63 @@ void URTSGameHUD::EnsureDialogueOverlay()
 		AdvSlot->SetOffsets(FMargin(0.f));
 	}
 
-	// Portrait placeholder (立绘) — gameplay camera remains the backdrop.
+	// Left 500 portrait; name overlays portrait bottom; dialogue same height to the right.
 	PortraitBlock = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("PortraitBlock"));
-	// Warm color so it stays visible against green grass.
-	PortraitBlock->SetBrushColor(FLinearColor(0.95f, 0.75f, 0.35f, 0.98f));
-	PortraitBlock->SetPadding(FMargin(12.f));
+	ApplySoftPanelBrush(PortraitBlock, IconBadgeBg);
+	PortraitBlock->SetPadding(FMargin(8.f));
 	{
 		UCanvasPanelSlot* PortSlot = Inner->AddChildToCanvas(PortraitBlock);
-		PortSlot->SetAnchors(FAnchors(0.5f, 1.f, 0.5f, 1.f));
-		PortSlot->SetAlignment(FVector2D(0.5f, 1.f));
-		PortSlot->SetSize(FVector2D(240.f, 340.f));
-		PortSlot->SetPosition(FVector2D(0.f, -150.f));
+		PortSlot->SetAnchors(FAnchors(0.f, 1.f));
+		PortSlot->SetAlignment(FVector2D(0.f, 1.f));
+		PortSlot->SetSize(FVector2D(DialoguePortraitSize, DialoguePortraitSize));
+		PortSlot->SetPosition(FVector2D(DialogueSideMargin, -DialogueBottomMargin));
 		PortSlot->SetZOrder(5);
 	}
-	UTextBlock* PortraitLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PortraitLabel"));
-	PortraitLabel->SetText(FText::FromString(TEXT("Portrait")));
-	PortraitLabel->SetJustification(ETextJustify::Center);
-	PortraitLabel->SetColorAndOpacity(FSlateColor(DarkText));
-	PortraitBlock->SetContent(PortraitLabel);
+	DialoguePortrait = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("DialoguePortrait"));
+	SetImageFromPath(DialoguePortrait, TEXT("/Game/UI/Icons/T_Icon_Chicken.T_Icon_Chicken"), DialoguePortraitSize - 24.f);
+	PortraitBlock->SetContent(DialoguePortrait);
 
-	// Bottom chrome: name plate sits on the top edge of the white dialogue box.
+	NamePlate = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NamePlate"));
+	ApplySoftPanelBrush(NamePlate, NamePlateBg);
+	NamePlate->SetPadding(FMargin(12.f, 8.f));
+	{
+		UCanvasPanelSlot* NameSlot = Inner->AddChildToCanvas(NamePlate);
+		NameSlot->SetAnchors(FAnchors(0.f, 1.f));
+		NameSlot->SetAlignment(FVector2D(0.f, 1.f));
+		NameSlot->SetAutoSize(false);
+		NameSlot->SetSize(FVector2D(DialoguePortraitSize, DialogueNameBand));
+		NameSlot->SetPosition(FVector2D(DialogueSideMargin, -DialogueBottomMargin));
+		NameSlot->SetZOrder(6);
+	}
+	DialogueNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DialogueNameText"));
+	DialogueNameText->SetText(FText::FromString(TEXT("Hen")));
+	DialogueNameText->SetColorAndOpacity(FSlateColor(DarkText));
+	DialogueNameText->SetJustification(ETextJustify::Center);
+	NamePlate->SetContent(DialogueNameText);
+
 	DialogueBottomChrome = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("DialogueBottomChrome"));
 	{
+		// Bottom-anchored: Offsets.Bottom is HEIGHT (= portrait height).
 		UCanvasPanelSlot* ChromeSlot = Inner->AddChildToCanvas(DialogueBottomChrome);
-		ChromeSlot->SetAnchors(FAnchors(0.06f, 1.f, 0.94f, 1.f));
+		ChromeSlot->SetAnchors(FAnchors(0.f, 1.f, 1.f, 1.f));
 		ChromeSlot->SetAlignment(FVector2D(0.f, 1.f));
-		ChromeSlot->SetOffsets(FMargin(0.f, -24.f, 0.f, 24.f));
-		ChromeSlot->SetSize(FVector2D(0.f, 140.f));
+		ChromeSlot->SetAutoSize(false);
+		ChromeSlot->SetOffsets(FMargin(
+			DialogueSideMargin + DialoguePortraitSize + DialogueGap,
+			-DialogueBottomMargin,
+			DialogueSideMargin,
+			DialoguePortraitSize));
 		ChromeSlot->SetZOrder(10);
 	}
 
 	UBorder* DialogueBox = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("DialogueBox"));
-	DialogueBox->SetBrushColor(FLinearColor(1.f, 1.f, 1.f, 0.97f));
-	DialogueBox->SetPadding(FMargin(20.f, 22.f, 20.f, 14.f));
+	ApplySoftPanelBrush(DialogueBox, DialogBoxBg);
+	DialogueBox->SetPadding(FMargin(28.f, 24.f, 28.f, 18.f));
 	{
 		UCanvasPanelSlot* BoxSlot = DialogueBottomChrome->AddChildToCanvas(DialogueBox);
 		BoxSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
-		BoxSlot->SetOffsets(FMargin(0.f, 18.f, 0.f, 0.f));
+		BoxSlot->SetAutoSize(false);
+		BoxSlot->SetOffsets(FMargin(0.f));
 	}
 
 	UVerticalBox* BoxCol = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("DialogueBoxCol"));
@@ -275,26 +386,195 @@ void URTSGameHUD::EnsureDialogueOverlay()
 		BodySlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 
+	// Hint pinned to dialogue chrome bottom-right (not stacked under body).
 	UTextBlock* ContinueHint = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ContinueHint"));
 	ContinueHint->SetText(FText::FromString(TEXT("Click / Space to continue")));
 	ContinueHint->SetColorAndOpacity(FSlateColor(FLinearColor(0.4f, 0.4f, 0.45f)));
 	ContinueHint->SetJustification(ETextJustify::Right);
-	BoxCol->AddChildToVerticalBox(ContinueHint);
-
-	NamePlate = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("NamePlate"));
-	NamePlate->SetBrushColor(FLinearColor(1.f, 0.92f, 0.55f, 0.98f));
-	NamePlate->SetPadding(FMargin(16.f, 6.f));
 	{
-		UCanvasPanelSlot* NameSlot = DialogueBottomChrome->AddChildToCanvas(NamePlate);
-		NameSlot->SetAnchors(FAnchors(0.f, 0.f, 0.f, 0.f));
-		NameSlot->SetAlignment(FVector2D(0.f, 0.5f));
-		NameSlot->SetAutoSize(true);
-		NameSlot->SetPosition(FVector2D(16.f, 18.f));
+		UCanvasPanelSlot* HintSlot = DialogueBottomChrome->AddChildToCanvas(ContinueHint);
+		HintSlot->SetAnchors(FAnchors(1.f, 1.f));
+		HintSlot->SetAlignment(FVector2D(1.f, 1.f));
+		HintSlot->SetAutoSize(true);
+		HintSlot->SetPosition(FVector2D(-28.f, -18.f));
+		HintSlot->SetZOrder(12);
 	}
-	DialogueNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("DialogueNameText"));
-	DialogueNameText->SetText(FText::FromString(TEXT("Hen")));
-	DialogueNameText->SetColorAndOpacity(FSlateColor(DarkText));
-	NamePlate->SetContent(DialogueNameText);
+
+	ApplyDialogueDesignerLayout();
+}
+
+void URTSGameHUD::ApplyDialogueDesignerLayout()
+{
+	if (!DialoguePanel)
+	{
+		return;
+	}
+
+	EnsureHudStyleAssets();
+
+	// Dim backdrop (designer Borders default to solid white).
+	DialoguePanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.2f));
+	DialoguePanel->SetPadding(FMargin(0.f));
+
+	if (UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(DialoguePanel->Slot))
+	{
+		PanelSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+		PanelSlot->SetOffsets(FMargin(0.f));
+		PanelSlot->SetAlignment(FVector2D(0.f, 0.f));
+		PanelSlot->SetZOrder(50);
+	}
+
+	if (BtnDialogueAdvance)
+	{
+		FButtonStyle Style = BtnDialogueAdvance->WidgetStyle;
+		const FSlateColor Invisible(FLinearColor(0.f, 0.f, 0.f, 0.f));
+		Style.Normal.TintColor = Invisible;
+		Style.Hovered.TintColor = Invisible;
+		Style.Pressed.TintColor = Invisible;
+		Style.Disabled.TintColor = Invisible;
+		Style.Normal.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Style.Hovered.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Style.Pressed.DrawAs = ESlateBrushDrawType::NoDrawType;
+		Style.Disabled.DrawAs = ESlateBrushDrawType::NoDrawType;
+		BtnDialogueAdvance->SetStyle(Style);
+		BtnDialogueAdvance->SetBackgroundColor(FLinearColor(1.f, 1.f, 1.f, 0.f));
+		BtnDialogueAdvance->SetVisibility(ESlateVisibility::Visible);
+		if (UCanvasPanelSlot* AdvSlot = Cast<UCanvasPanelSlot>(BtnDialogueAdvance->Slot))
+		{
+			AdvSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+			AdvSlot->SetOffsets(FMargin(0.f));
+			AdvSlot->SetZOrder(0);
+		}
+	}
+
+	if (!DialoguePortrait && WidgetTree)
+	{
+		DialoguePortrait = Cast<UImage>(WidgetTree->FindWidget(TEXT("DialoguePortrait")));
+	}
+	if (!DialoguePortrait && PortraitBlock && WidgetTree)
+	{
+		DialoguePortrait = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("DialoguePortrait"));
+		PortraitBlock->SetContent(DialoguePortrait);
+	}
+	if (DialoguePortrait)
+	{
+		SetImageFromPath(DialoguePortrait, TEXT("/Game/UI/Icons/T_Icon_Chicken.T_Icon_Chicken"), DialoguePortraitSize - 24.f);
+		DialoguePortrait->SetVisibility(ESlateVisibility::HitTestInvisible);
+	}
+
+	if (PortraitBlock)
+	{
+		ApplySoftPanelBrush(PortraitBlock, IconBadgeBg);
+		PortraitBlock->SetPadding(FMargin(8.f));
+		PortraitBlock->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (DialoguePortrait && PortraitBlock->GetContent() != DialoguePortrait)
+		{
+			PortraitBlock->SetContent(DialoguePortrait);
+		}
+	}
+
+	UCanvasPanel* DialogueInner = Cast<UCanvasPanel>(DialoguePanel->GetContent());
+
+	// Portrait bottom-left, 500×500.
+	UWidget* PortraitWidget = PortraitBlock ? static_cast<UWidget*>(PortraitBlock) : static_cast<UWidget*>(DialoguePortrait);
+	if (PortraitWidget)
+	{
+		if (UCanvasPanelSlot* PortSlot = Cast<UCanvasPanelSlot>(PortraitWidget->Slot))
+		{
+			PortSlot->SetAnchors(FAnchors(0.f, 1.f));
+			PortSlot->SetAlignment(FVector2D(0.f, 1.f));
+			PortSlot->SetAutoSize(false);
+			PortSlot->SetSize(FVector2D(DialoguePortraitSize, DialoguePortraitSize));
+			PortSlot->SetPosition(FVector2D(DialogueSideMargin, -DialogueBottomMargin));
+			PortSlot->SetZOrder(5);
+		}
+	}
+
+	// Name plate covers the bottom of the portrait.
+	if (NamePlate && DialogueInner)
+	{
+		ApplySoftPanelBrush(NamePlate, NamePlateBg);
+		NamePlate->SetPadding(FMargin(12.f, 8.f));
+		NamePlate->SetVisibility(ESlateVisibility::HitTestInvisible);
+		NamePlate->RemoveFromParent();
+		UCanvasPanelSlot* NameSlot = DialogueInner->AddChildToCanvas(NamePlate);
+		NameSlot->SetAnchors(FAnchors(0.f, 1.f));
+		NameSlot->SetAlignment(FVector2D(0.f, 1.f));
+		NameSlot->SetAutoSize(false);
+		NameSlot->SetSize(FVector2D(DialoguePortraitSize, DialogueNameBand));
+		NameSlot->SetPosition(FVector2D(DialogueSideMargin, -DialogueBottomMargin));
+		NameSlot->SetZOrder(6);
+	}
+
+	// Dialogue column: same height as portrait, to the right.
+	if (DialogueBottomChrome)
+	{
+		DialogueBottomChrome->SetVisibility(ESlateVisibility::HitTestInvisible);
+		if (UCanvasPanelSlot* ChromeSlot = Cast<UCanvasPanelSlot>(DialogueBottomChrome->Slot))
+		{
+			ChromeSlot->SetAnchors(FAnchors(0.f, 1.f, 1.f, 1.f));
+			ChromeSlot->SetAlignment(FVector2D(0.f, 1.f));
+			ChromeSlot->SetAutoSize(false);
+			ChromeSlot->SetOffsets(FMargin(
+				DialogueSideMargin + DialoguePortraitSize + DialogueGap,
+				-DialogueBottomMargin,
+				DialogueSideMargin,
+				DialoguePortraitSize));
+			ChromeSlot->SetZOrder(10);
+		}
+	}
+
+	if (WidgetTree)
+	{
+		if (UBorder* DialogueBox = Cast<UBorder>(WidgetTree->FindWidget(TEXT("DialogueBox"))))
+		{
+			ApplySoftPanelBrush(DialogueBox, DialogBoxBg);
+			DialogueBox->SetPadding(FMargin(28.f, 24.f, 28.f, 18.f));
+			DialogueBox->SetVisibility(ESlateVisibility::HitTestInvisible);
+			if (UCanvasPanelSlot* BoxSlot = Cast<UCanvasPanelSlot>(DialogueBox->Slot))
+			{
+				BoxSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
+				BoxSlot->SetAutoSize(false);
+				BoxSlot->SetOffsets(FMargin(0.f));
+			}
+		}
+
+		if (UTextBlock* ContinueHint = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("ContinueHint"))))
+		{
+			ContinueHint->SetText(FText::FromString(TEXT("Click / Space to continue")));
+			ContinueHint->SetColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.35f, 0.4f, 1.f)));
+			ContinueHint->SetJustification(ETextJustify::Right);
+			ContinueHint->SetVisibility(ESlateVisibility::HitTestInvisible);
+			ApplyHudFont(ContinueHint, FontBody);
+
+			// Always pin to dialogue box bottom-right.
+			if (DialogueBottomChrome)
+			{
+				ContinueHint->RemoveFromParent();
+				UCanvasPanelSlot* HintCSlot = DialogueBottomChrome->AddChildToCanvas(ContinueHint);
+				HintCSlot->SetAnchors(FAnchors(1.f, 1.f));
+				HintCSlot->SetAlignment(FVector2D(1.f, 1.f));
+				HintCSlot->SetAutoSize(true);
+				HintCSlot->SetPosition(FVector2D(-28.f, -18.f));
+				HintCSlot->SetZOrder(12);
+			}
+		}
+	}
+
+	if (DialogueNameText)
+	{
+		DialogueNameText->SetColorAndOpacity(FSlateColor(DarkText));
+		DialogueNameText->SetJustification(ETextJustify::Center);
+		DialogueNameText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ApplyHudFont(DialogueNameText, FontDialogueName);
+	}
+	if (DialogueBodyText)
+	{
+		DialogueBodyText->SetColorAndOpacity(FSlateColor(DarkText));
+		DialogueBodyText->SetAutoWrapText(true);
+		DialogueBodyText->SetVisibility(ESlateVisibility::HitTestInvisible);
+		ApplyHudFont(DialogueBodyText, FontDialogueBody);
+	}
 }
 
 void URTSGameHUD::EnsureResultOverlay()
@@ -310,31 +590,65 @@ void URTSGameHUD::EnsureResultOverlay()
 		return;
 	}
 
+	EnsureHudStyleAssets();
+
+	// Full-screen dim; centered storybook modal card.
 	ResultPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ResultPanel"));
-	ResultPanel->SetBrushColor(FLinearColor(0.02f, 0.02f, 0.02f, 0.82f));
-	ResultPanel->SetPadding(FMargin(24.f));
+	ResultPanel->SetBrushColor(FLinearColor(0.f, 0.f, 0.f, 0.35f));
+	ResultPanel->SetPadding(FMargin(0.f));
 	ResultPanel->SetVisibility(ESlateVisibility::Collapsed);
 
 	UCanvasPanelSlot* PanelSlot = Canvas->AddChildToCanvas(ResultPanel);
 	PanelSlot->SetAnchors(FAnchors(0.f, 0.f, 1.f, 1.f));
 	PanelSlot->SetOffsets(FMargin(0.f));
+	PanelSlot->SetZOrder(60);
 
-	UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ResultCard"));
-	Card->SetBrushColor(FLinearColor(0.12f, 0.1f, 0.1f, 0.96f));
-	Card->SetPadding(FMargin(36.f, 28.f));
-	ResultPanel->SetContent(Card);
+	UCanvasPanel* Inner = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("ResultInner"));
+	ResultPanel->SetContent(Inner);
+
+	USizeBox* CardWidth = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ResultCardWidth"));
+	CardWidth->SetWidthOverride(460.f);
+	{
+		UCanvasPanelSlot* CardSlot = Inner->AddChildToCanvas(CardWidth);
+		CardSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+		CardSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		CardSlot->SetAutoSize(true);
+	}
+
+	ResultCard = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ResultCard"));
+	ApplySoftPanelBrush(ResultCard, ModalCardBg);
+	ResultCard->SetPadding(FMargin(28.f, 24.f));
+	CardWidth->SetContent(ResultCard);
 
 	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("ResultCol"));
-	Card->SetContent(Col);
+	ResultCard->SetContent(Col);
+
+	ResultTitlePlate = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("ResultTitlePlate"));
+	ApplySoftPanelBrush(ResultTitlePlate, NamePlateBg);
+	ResultTitlePlate->SetPadding(FMargin(20.f, 8.f));
+	{
+		UVerticalBoxSlot* PlateSlot = Col->AddChildToVerticalBox(ResultTitlePlate);
+		PlateSlot->SetHorizontalAlignment(HAlign_Center);
+		PlateSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 16.f));
+	}
 
 	ResultTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ResultTitleText"));
 	ResultTitleText->SetText(FText::FromString(TEXT("Defeat")));
 	ResultTitleText->SetJustification(ETextJustify::Center);
-	ResultTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.35f, 0.3f)));
+	ResultTitleText->SetColorAndOpacity(FSlateColor(DarkText));
+	ApplyHudFont(ResultTitleText, FontModalTitle);
+	ResultTitlePlate->SetContent(ResultTitleText);
+
+	ResultBodyText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ResultBodyText"));
+	ResultBodyText->SetText(FText::FromString(TEXT("")));
+	ResultBodyText->SetJustification(ETextJustify::Center);
+	ResultBodyText->SetColorAndOpacity(FSlateColor(DarkText));
+	ResultBodyText->SetAutoWrapText(true);
+	ApplyHudFont(ResultBodyText, FontBody);
 	{
-		UVerticalBoxSlot* TitleSlot = Col->AddChildToVerticalBox(ResultTitleText);
-		TitleSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 24.f));
-		TitleSlot->SetHorizontalAlignment(HAlign_Center);
+		UVerticalBoxSlot* BodySlot = Col->AddChildToVerticalBox(ResultBodyText);
+		BodySlot->SetHorizontalAlignment(HAlign_Fill);
+		BodySlot->SetPadding(FMargin(8.f, 0.f, 8.f, 22.f));
 	}
 
 	UHorizontalBox* BtnRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ResultBtnRow"));
@@ -343,16 +657,32 @@ void URTSGameHUD::EnsureResultOverlay()
 		RowSlot->SetHorizontalAlignment(HAlign_Center);
 	}
 
-	BtnPrimaryResult = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("BtnPrimaryResult"));
-	PrimaryResultLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("PrimaryResultLabel"));
-	PrimaryResultLabel->SetText(FText::FromString(TEXT("Replay")));
-	BtnPrimaryResult->AddChild(PrimaryResultLabel);
+	auto MakeResultBtn = [&](UButton*& OutBtn, UTextBlock*& OutLabel, const TCHAR* Label, FName Name,
+		const FLinearColor& Normal, const FLinearColor& Hover) -> void
 	{
-		UHorizontalBoxSlot* Added = BtnRow->AddChildToHorizontalBox(BtnPrimaryResult);
-		Added->SetPadding(FMargin(3.f, 0.f));
-	}
+		USizeBox* BtnBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		BtnBox->SetMinDesiredHeight(40.f);
+		BtnBox->SetWidthOverride(140.f);
 
-	BtnQuit = MakeLabeledButton(BtnRow, TEXT("Quit"), TEXT("BtnQuit"));
+		OutBtn = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), Name);
+		OutLabel = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		OutLabel->SetText(FText::FromString(Label));
+		OutLabel->SetJustification(ETextJustify::Center);
+		OutLabel->SetColorAndOpacity(FSlateColor(CostOnDark));
+		ApplyHudFont(OutLabel, FontBody);
+		OutBtn->AddChild(OutLabel);
+		ApplySoftButtonStyle(OutBtn, Normal, Hover, CardSelectedBg);
+		BtnBox->SetContent(OutBtn);
+
+		UHorizontalBoxSlot* Added = BtnRow->AddChildToHorizontalBox(BtnBox);
+		Added->SetPadding(FMargin(8.f, 0.f));
+		Added->SetVerticalAlignment(VAlign_Center);
+	};
+
+	MakeResultBtn(BtnPrimaryResult, PrimaryResultLabel, TEXT("Replay"), TEXT("BtnPrimaryResult"),
+		DispatchBtnBg, DispatchBtnHover);
+	MakeResultBtn(BtnQuit, QuitResultLabel, TEXT("Quit"), TEXT("BtnQuit"),
+		QuitBtnBg, QuitBtnHover);
 }
 
 void URTSGameHUD::LoadDialogueLines(ERTSDialogueKind Kind)
@@ -399,6 +729,17 @@ void URTSGameHUD::SetGameplayHudVisible(bool bVisible)
 	{
 		SideBarsBox->SetVisibility(Vis);
 	}
+	if (ResourceBarPanel)
+	{
+		ResourceBarPanel->SetVisibility(Vis);
+	}
+	for (UTextBlock* Label : WorldLabelPool)
+	{
+		if (Label)
+		{
+			Label->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		}
+	}
 }
 
 FString URTSGameHUD::UnitTypeDisplayName(ERTSUnitType Type)
@@ -437,9 +778,11 @@ void URTSGameHUD::EnsureUpgradeToast()
 		return;
 	}
 
+	EnsureHudStyleAssets();
+
 	UpgradeToastPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("UpgradeToastPanel"));
-	UpgradeToastPanel->SetBrushColor(FLinearColor(0.12f, 0.18f, 0.28f, 0.94f));
-	UpgradeToastPanel->SetPadding(FMargin(22.f, 14.f));
+	ApplySoftPanelBrush(UpgradeToastPanel, ModalCardBg);
+	UpgradeToastPanel->SetPadding(FMargin(18.f, 14.f));
 	UpgradeToastPanel->SetVisibility(ESlateVisibility::Collapsed);
 	UpgradeToastPanel->SetRenderOpacity(1.f);
 
@@ -448,29 +791,66 @@ void URTSGameHUD::EnsureUpgradeToast()
 	UpgradeToastSlot->SetAlignment(FVector2D(0.5f, 0.f));
 	UpgradeToastSlot->SetAutoSize(true);
 	UpgradeToastSlot->SetPosition(FVector2D(0.f, -140.f));
-	UpgradeToastSlot->SetZOrder(50);
+	UpgradeToastSlot->SetZOrder(55);
 
 	UVerticalBox* Col = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("UpgradeToastCol"));
 	UpgradeToastPanel->SetContent(Col);
 
+	UpgradeToastTitlePlate = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("UpgradeToastTitlePlate"));
+	ApplySoftPanelBrush(UpgradeToastTitlePlate, NamePlateBg);
+	UpgradeToastTitlePlate->SetPadding(FMargin(16.f, 6.f));
+	{
+		UVerticalBoxSlot* PlateSlot = Col->AddChildToVerticalBox(UpgradeToastTitlePlate);
+		PlateSlot->SetHorizontalAlignment(HAlign_Center);
+		PlateSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 8.f));
+	}
+
 	UpgradeToastTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("UpgradeToastTitle"));
 	UpgradeToastTitleText->SetText(FText::FromString(TEXT("Upgraded")));
-	UpgradeToastTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.92f, 0.45f, 1.f)));
+	UpgradeToastTitleText->SetColorAndOpacity(FSlateColor(DarkText));
 	UpgradeToastTitleText->SetJustification(ETextJustify::Center);
-	{
-		UVerticalBoxSlot* TitleSlot = Col->AddChildToVerticalBox(UpgradeToastTitleText);
-		TitleSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
-		TitleSlot->SetHorizontalAlignment(HAlign_Center);
-	}
+	ApplyHudFont(UpgradeToastTitleText, FontTitle);
+	UpgradeToastTitlePlate->SetContent(UpgradeToastTitleText);
 
 	UpgradeToastBodyText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("UpgradeToastBody"));
 	UpgradeToastBodyText->SetText(FText::FromString(TEXT("")));
-	UpgradeToastBodyText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.97f, 1.f, 1.f)));
+	UpgradeToastBodyText->SetColorAndOpacity(FSlateColor(DarkText));
 	UpgradeToastBodyText->SetJustification(ETextJustify::Center);
+	ApplyHudFont(UpgradeToastBodyText, FontBody);
 	{
 		UVerticalBoxSlot* BodySlot = Col->AddChildToVerticalBox(UpgradeToastBodyText);
 		BodySlot->SetHorizontalAlignment(HAlign_Center);
 	}
+}
+
+void URTSGameHUD::RefreshUpgradeToastRestY()
+{
+	constexpr float GapBelowWave = 12.f;
+	constexpr float FallbackRestY = 78.f;
+
+	UpgradeToastRestY = FallbackRestY;
+	if (!WavePanel)
+	{
+		return;
+	}
+
+	float WaveTop = 12.f;
+	if (UCanvasPanelSlot* WaveSlot = Cast<UCanvasPanelSlot>(WavePanel->Slot))
+	{
+		WaveTop = WaveSlot->GetPosition().Y;
+	}
+
+	float WaveH = WavePanel->GetDesiredSize().Y;
+	if (WaveH < 1.f)
+	{
+		WaveH = WavePanel->GetCachedGeometry().GetLocalSize().Y;
+	}
+	if (WaveH < 1.f)
+	{
+		WaveH = 48.f;
+	}
+
+	UpgradeToastRestY = WaveTop + WaveH + GapBelowWave;
 }
 
 void URTSGameHUD::ShowUpgradeToast(ERTSUnitType Type, int32 NewLevel)
@@ -485,8 +865,22 @@ void URTSGameHUD::ShowUpgradeToast(ERTSUnitType Type, int32 NewLevel)
 	const FString Bonus = UpgradeBonusText(NewLevel);
 	UpgradeToastTitleText->SetText(FText::FromString(
 		FString::Printf(TEXT("%s  →  Lv%d"), *Name, NewLevel)));
+	UpgradeToastTitleText->SetColorAndOpacity(FSlateColor(DarkText));
+	ApplyHudFont(UpgradeToastTitleText, FontTitle);
 	UpgradeToastBodyText->SetText(FText::FromString(
 		FString::Printf(TEXT("Bonus: %s"), *Bonus)));
+	UpgradeToastBodyText->SetColorAndOpacity(FSlateColor(DarkText));
+	ApplyHudFont(UpgradeToastBodyText, FontBody);
+	if (UpgradeToastPanel)
+	{
+		ApplySoftPanelBrush(UpgradeToastPanel, ModalCardBg);
+	}
+	if (UpgradeToastTitlePlate)
+	{
+		ApplySoftPanelBrush(UpgradeToastTitlePlate, NamePlateBg);
+	}
+
+	RefreshUpgradeToastRestY();
 
 	UpgradeToastAge = 0.f;
 	bUpgradeToastActive = true;
@@ -494,7 +888,7 @@ void URTSGameHUD::ShowUpgradeToast(ERTSUnitType Type, int32 NewLevel)
 	UpgradeToastPanel->SetVisibility(ESlateVisibility::HitTestInvisible);
 	if (UpgradeToastSlot)
 	{
-		UpgradeToastSlot->SetPosition(FVector2D(0.f, -140.f));
+		UpgradeToastSlot->SetPosition(FVector2D(0.f, UpgradeToastRestY - 160.f));
 	}
 }
 
@@ -523,21 +917,1062 @@ void URTSGameHUD::TickUpgradeToast(float DeltaTime)
 	float Y = UpgradeToastRestY;
 	float Opacity = 1.f;
 
+	const float StartY = UpgradeToastRestY - 160.f;
 	if (UpgradeToastAge < DropDuration)
 	{
 		const float T = UpgradeToastAge / DropDuration;
 		const float Ease = 1.f - FMath::Square(1.f - T); // ease-out
-		Y = FMath::Lerp(-140.f, UpgradeToastRestY, Ease);
+		Y = FMath::Lerp(StartY, UpgradeToastRestY, Ease);
 	}
 	else if (UpgradeToastAge > DropDuration + HoldDuration)
 	{
 		const float FadeT = (UpgradeToastAge - DropDuration - HoldDuration) / FadeDuration;
 		Opacity = 1.f - FMath::Clamp(FadeT, 0.f, 1.f);
-		Y = UpgradeToastRestY - FadeT * 24.f;
+		Y = UpgradeToastRestY + FadeT * 12.f; // drift slightly down while fading
 	}
 
 	UpgradeToastSlot->SetPosition(FVector2D(0.f, Y));
 	UpgradeToastPanel->SetRenderOpacity(Opacity);
+}
+
+void URTSGameHUD::CollectTextBlocks(UWidget* Root, TArray<UTextBlock*>& OutTexts)
+{
+	if (!Root)
+	{
+		return;
+	}
+	if (UTextBlock* AsText = Cast<UTextBlock>(Root))
+	{
+		OutTexts.Add(AsText);
+		return;
+	}
+	if (UPanelWidget* Panel = Cast<UPanelWidget>(Root))
+	{
+		const int32 Num = Panel->GetChildrenCount();
+		for (int32 i = 0; i < Num; ++i)
+		{
+			CollectTextBlocks(Panel->GetChildAt(i), OutTexts);
+		}
+	}
+}
+
+void URTSGameHUD::ResolveDesignerBindings()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	auto FindBtn = [this](UButton*& OutBtn, const TCHAR* Name)
+	{
+		if (!OutBtn)
+		{
+			OutBtn = Cast<UButton>(WidgetTree->FindWidget(Name));
+		}
+	};
+	auto FindText = [this](UTextBlock*& OutText, const TCHAR* Name)
+	{
+		if (!OutText)
+		{
+			OutText = Cast<UTextBlock>(WidgetTree->FindWidget(Name));
+		}
+	};
+
+	FindBtn(BtnRabbit, TEXT("BtnRabbit"));
+	FindBtn(BtnChicken, TEXT("BtnChicken"));
+	FindBtn(BtnSheep, TEXT("BtnSheep"));
+	FindBtn(BtnPig, TEXT("BtnPig"));
+	FindBtn(BtnUpgradeRabbit, TEXT("BtnUpgradeRabbit"));
+	FindBtn(BtnUpgradeChicken, TEXT("BtnUpgradeChicken"));
+	FindBtn(BtnUpgradeSheep, TEXT("BtnUpgradeSheep"));
+	FindBtn(BtnUpgradePig, TEXT("BtnUpgradePig"));
+
+	FindText(FodderText, TEXT("FodderText"));
+	FindText(SoulText, TEXT("SoulText"));
+	FindText(WaveText, TEXT("WaveText"));
+	FindText(ObjectiveText, TEXT("ObjectiveText"));
+	FindText(StatusText, TEXT("StatusText"));
+	FindText(CostRabbitText, TEXT("CostRabbitText"));
+	FindText(CostChickenText, TEXT("CostChickenText"));
+	FindText(CostSheepText, TEXT("CostSheepText"));
+	FindText(CostPigText, TEXT("CostPigText"));
+	FindText(UpgradeRabbitText, TEXT("UpgradeRabbitText"));
+	FindText(UpgradeChickenText, TEXT("UpgradeChickenText"));
+	FindText(UpgradeSheepText, TEXT("UpgradeSheepText"));
+	FindText(UpgradePigText, TEXT("UpgradePigText"));
+
+	// Dialogue (WBP_RTSGameHUD BindWidget names)
+	if (!DialoguePanel) { DialoguePanel = Cast<UBorder>(WidgetTree->FindWidget(TEXT("DialoguePanel"))); }
+	if (!DialogueNameText) { DialogueNameText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("DialogueNameText"))); }
+	if (!DialogueBodyText) { DialogueBodyText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("DialogueBodyText"))); }
+	FindBtn(BtnDialogueAdvance, TEXT("BtnDialogueAdvance"));
+	if (!PortraitBlock) { PortraitBlock = Cast<UBorder>(WidgetTree->FindWidget(TEXT("PortraitBlock"))); }
+	if (!NamePlate) { NamePlate = Cast<UBorder>(WidgetTree->FindWidget(TEXT("NamePlate"))); }
+	if (!DialogueBottomChrome) { DialogueBottomChrome = Cast<UCanvasPanel>(WidgetTree->FindWidget(TEXT("DialogueBottomChrome"))); }
+	if (!DialoguePortrait) { DialoguePortrait = Cast<UImage>(WidgetTree->FindWidget(TEXT("DialoguePortrait"))); }
+
+	// Re-bind clicks in case buttons were resolved after the first bind pass.
+	BindFallbackButtonHandlers();
+}
+
+void URTSGameHUD::RefreshRecruitSlot(UButton* Button, UTextBlock* CostText, int32 Cost, int32 AvailableFodder)
+{
+	if (CostText)
+	{
+		CostText->SetText(FText::FromString(FString::Printf(TEXT("%d"), Cost)));
+		CostText->SetColorAndOpacity(FSlateColor(CostOnDark));
+	}
+	if (Button)
+	{
+		Button->SetIsEnabled(AvailableFodder >= Cost);
+	}
+}
+
+void URTSGameHUD::RefreshUpgradeSlot(UButton* Button, UTextBlock*& LevelText, UTextBlock*& CostText, UImage* CostIcon, ERTSUnitType Type, ARTSGameMode* GM)
+{
+	if (!GM)
+	{
+		return;
+	}
+
+	const int32 Lv = GM->GetUnitUpgradeLevel(Type);
+	const bool bMax = Lv >= 3;
+	if (LevelText)
+	{
+		LevelText->SetText(FText::FromString(FString::Printf(TEXT("Lv%d"), bMax ? 3 : Lv)));
+		LevelText->SetColorAndOpacity(FSlateColor(DarkText));
+	}
+
+	const int32 NextCost = bMax ? 0 : GM->GetUpgradeCost(Lv + 1);
+	if (CostText)
+	{
+		CostText->SetText(bMax ? FText::FromString(TEXT("MAX")) : FText::FromString(FString::Printf(TEXT("%d"), NextCost)));
+		CostText->SetColorAndOpacity(FSlateColor(CostOnDark));
+		CostText->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	}
+	if (CostIcon)
+	{
+		CostIcon->SetVisibility(bMax ? ESlateVisibility::Collapsed : ESlateVisibility::HitTestInvisible);
+	}
+	if (Button)
+	{
+		Button->SetIsEnabled(!bMax && GM->Soul >= NextCost);
+		Button->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+void URTSGameHUD::EnsureHudStyleAssets()
+{
+	if (!HudFont)
+	{
+		HudFont = LoadObject<UFont>(nullptr, TEXT("/Game/Fonts/Galdeano.Galdeano"));
+		if (!HudFont)
+		{
+			HudFont = LoadObject<UFont>(nullptr, TEXT("/Game/Fonts/Galdeanofont.Galdeanofont"));
+		}
+	}
+
+	if (!RoundPanelTexture)
+	{
+		RoundPanelTexture = LoadObject<UTexture2D>(nullptr, TEXT("/Game/UI/T_UI_RoundPanel.T_UI_RoundPanel"));
+		if (!RoundPanelTexture)
+		{
+			RoundPanelTexture = CreateRoundPanelTexture();
+		}
+	}
+}
+
+void URTSGameHUD::ApplyHudFont(UTextBlock* Text, int32 Size) const
+{
+	if (!Text || !HudFont)
+	{
+		return;
+	}
+	FSlateFontInfo Info = Text->Font;
+	Info.FontObject = HudFont;
+	Info.Size = Size;
+	Text->SetFont(Info);
+}
+
+UTexture2D* URTSGameHUD::CreateRoundPanelTexture()
+{
+	constexpr int32 Size = 64;
+	constexpr float Radius = 14.f;
+
+	UTexture2D* Tex = UTexture2D::CreateTransient(Size, Size, PF_B8G8R8A8);
+	if (!Tex || !Tex->PlatformData || Tex->PlatformData->Mips.Num() == 0)
+	{
+		return nullptr;
+	}
+
+	Tex->SRGB = true;
+	Tex->Filter = TF_Bilinear;
+	Tex->CompressionSettings = TC_Default;
+	Tex->AddressX = TA_Clamp;
+	Tex->AddressY = TA_Clamp;
+
+	FTexture2DMipMap& Mip = Tex->PlatformData->Mips[0];
+	void* Data = Mip.BulkData.Lock(LOCK_READ_WRITE);
+	FColor* Pixels = static_cast<FColor*>(Data);
+
+	auto InsideRounded = [&](int32 X, int32 Y) -> bool
+	{
+		const float Px = X + 0.5f;
+		const float Py = Y + 0.5f;
+		float Cx = -1.f;
+		float Cy = -1.f;
+		if (Px < Radius && Py < Radius)
+		{
+			Cx = Radius;
+			Cy = Radius;
+		}
+		else if (Px >= Size - Radius && Py < Radius)
+		{
+			Cx = Size - Radius;
+			Cy = Radius;
+		}
+		else if (Px < Radius && Py >= Size - Radius)
+		{
+			Cx = Radius;
+			Cy = Size - Radius;
+		}
+		else if (Px >= Size - Radius && Py >= Size - Radius)
+		{
+			Cx = Size - Radius;
+			Cy = Size - Radius;
+		}
+		else
+		{
+			return true;
+		}
+		const float Dx = Px - Cx;
+		const float Dy = Py - Cy;
+		return (Dx * Dx + Dy * Dy) <= (Radius * Radius);
+	};
+
+	for (int32 Y = 0; Y < Size; ++Y)
+	{
+		for (int32 X = 0; X < Size; ++X)
+		{
+			Pixels[Y * Size + X] = InsideRounded(X, Y)
+				? FColor(255, 255, 255, 255)
+				: FColor(0, 0, 0, 0);
+		}
+	}
+
+	Mip.BulkData.Unlock();
+	Tex->UpdateResource();
+	return Tex;
+}
+
+void URTSGameHUD::ApplySoftPanelBrush(UBorder* Border, const FLinearColor& Tint)
+{
+	if (!Border)
+	{
+		return;
+	}
+	EnsureHudStyleAssets();
+
+	FSlateBrush Brush;
+	Brush.DrawAs = ESlateBrushDrawType::Box;
+	Brush.TintColor = FSlateColor(Tint);
+	Brush.Margin = FMargin(0.4f);
+	Brush.ImageSize = FVector2D(64.f, 64.f);
+	if (RoundPanelTexture)
+	{
+		Brush.SetResourceObject(RoundPanelTexture);
+	}
+	else
+	{
+		const FButtonStyle& Ref = FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("Button");
+		Brush = Ref.Normal;
+		Brush.TintColor = FSlateColor(Tint);
+	}
+	Border->SetBrush(Brush);
+}
+
+void URTSGameHUD::ApplySoftButtonStyle(UButton* Btn, const FLinearColor& Normal, const FLinearColor& Hovered, const FLinearColor& Pressed)
+{
+	if (!Btn)
+	{
+		return;
+	}
+	EnsureHudStyleAssets();
+
+	auto MakeBrush = [this](const FLinearColor& Tint) -> FSlateBrush
+	{
+		FSlateBrush Brush;
+		Brush.DrawAs = ESlateBrushDrawType::Box;
+		Brush.TintColor = FSlateColor(Tint);
+		Brush.Margin = FMargin(0.4f);
+		Brush.ImageSize = FVector2D(64.f, 64.f);
+		if (RoundPanelTexture)
+		{
+			Brush.SetResourceObject(RoundPanelTexture);
+		}
+		return Brush;
+	};
+
+	FButtonStyle Style = FCoreStyle::Get().GetWidgetStyle<FButtonStyle>("Button");
+	if (RoundPanelTexture)
+	{
+		Style.Normal = MakeBrush(Normal);
+		Style.Hovered = MakeBrush(Hovered);
+		Style.Pressed = MakeBrush(Pressed);
+		Style.Disabled = MakeBrush(FLinearColor(Normal.R, Normal.G, Normal.B, 0.4f));
+	}
+	else
+	{
+		Style.Normal.TintColor = FSlateColor(Normal);
+		Style.Hovered.TintColor = FSlateColor(Hovered);
+		Style.Pressed.TintColor = FSlateColor(Pressed);
+		Style.Disabled.TintColor = FSlateColor(FLinearColor(Normal.R, Normal.G, Normal.B, 0.35f));
+	}
+	Style.NormalPadding = FMargin(10.f, 9.f);
+	Style.PressedPadding = FMargin(10.f, 9.f);
+	Btn->SetStyle(Style);
+}
+
+void URTSGameHUD::EnsureWorldLabelLayer()
+{
+	// Labels are created on demand in UpdateWorldLabels / AcquireWorldLabel.
+	EnsureHudStyleAssets();
+}
+
+UTextBlock* URTSGameHUD::AcquireWorldLabel(int32 Index, const FString& Text, const FLinearColor& Color)
+{
+	if (!WidgetTree)
+	{
+		return nullptr;
+	}
+
+	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+	if (!RootCanvas)
+	{
+		return nullptr;
+	}
+
+	while (WorldLabelPool.Num() <= Index)
+	{
+		const int32 NewIndex = WorldLabelPool.Num();
+		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			*FString::Printf(TEXT("WorldLabel_%d"), NewIndex));
+		Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+		Label->SetJustification(ETextJustify::Center);
+		ApplyHudFont(Label, FontWorldLabel);
+
+		UCanvasPanelSlot* CanvasSlot = RootCanvas->AddChildToCanvas(Label);
+		CanvasSlot->SetAnchors(FAnchors(0.f, 0.f));
+		CanvasSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+		CanvasSlot->SetAutoSize(true);
+		CanvasSlot->SetZOrder(4);
+
+		WorldLabelPool.Add(Label);
+	}
+
+	UTextBlock* Label = WorldLabelPool[Index];
+	if (!Label)
+	{
+		return nullptr;
+	}
+
+	Label->SetText(FText::FromString(Text));
+	Label->SetColorAndOpacity(FSlateColor(Color));
+	ApplyHudFont(Label, FontWorldLabel);
+	Label->SetVisibility(ESlateVisibility::HitTestInvisible);
+	return Label;
+}
+
+void URTSGameHUD::UpdateWorldLabels()
+{
+	EnsureWorldLabelLayer();
+
+	const bool bHide = bDialogueActive || bResultShown;
+	if (bHide)
+	{
+		for (UTextBlock* Label : WorldLabelPool)
+		{
+			if (Label)
+			{
+				Label->SetVisibility(ESlateVisibility::Collapsed);
+			}
+		}
+		return;
+	}
+
+	APlayerController* PC = GetOwningPlayer();
+	UWorld* World = GetWorld();
+	if (!PC || !World)
+	{
+		return;
+	}
+
+	int32 LabelIndex = 0;
+
+	auto PlaceLabel = [&](const FVector& WorldLoc, const FString& Text, const FLinearColor& Color)
+	{
+		// Screen pixels != UMG local coords (DPI / viewport). Convert via WidgetLayoutLibrary.
+		FVector2D WidgetPos;
+		if (!UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition(PC, WorldLoc, WidgetPos, true))
+		{
+			return;
+		}
+
+		UTextBlock* Label = AcquireWorldLabel(LabelIndex, Text, Color);
+		++LabelIndex;
+		if (!Label)
+		{
+			return;
+		}
+
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Label->Slot))
+		{
+			CanvasSlot->SetPosition(WidgetPos);
+		}
+	};
+
+	TArray<AActor*> Buildings;
+	UGameplayStatics::GetAllActorsOfClass(World, ARTSBaseBuilding::StaticClass(), Buildings);
+	for (AActor* Actor : Buildings)
+	{
+		ARTSBaseBuilding* Building = Cast<ARTSBaseBuilding>(Actor);
+		if (!Building || !Building->IsAlive() || !Building->bIsCoreBuilding)
+		{
+			continue;
+		}
+		PlaceLabel(
+			Building->GetActorLocation() + FVector(0.f, 0.f, 240.f),
+			TEXT("Chicken Coop"),
+			FLinearColor(1.f, 0.9f, 0.35f, 1.f));
+	}
+
+	TArray<AActor*> Resources;
+	UGameplayStatics::GetAllActorsOfClass(World, ARTSResourceNode::StaticClass(), Resources);
+	for (AActor* Actor : Resources)
+	{
+		if (!Actor)
+		{
+			continue;
+		}
+		PlaceLabel(
+			Actor->GetActorLocation() + FVector(0.f, 0.f, 120.f),
+			TEXT("Fodder Point"),
+			FLinearColor(0.4f, 1.f, 0.45f, 1.f));
+	}
+
+	for (int32 i = LabelIndex; i < WorldLabelPool.Num(); ++i)
+	{
+		if (WorldLabelPool[i])
+		{
+			WorldLabelPool[i]->SetVisibility(ESlateVisibility::Collapsed);
+		}
+	}
+}
+
+void URTSGameHUD::ApplyDesignerLayout()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	auto ResolveBorder = [this](UBorder*& OutBorder, const TCHAR* Name)
+	{
+		if (!OutBorder)
+		{
+			OutBorder = Cast<UBorder>(WidgetTree->FindWidget(Name));
+		}
+	};
+	auto ResolveSizeBox = [this](USizeBox*& OutBox, const TCHAR* Name)
+	{
+		if (!OutBox)
+		{
+			OutBox = Cast<USizeBox>(WidgetTree->FindWidget(Name));
+		}
+	};
+
+	ResolveBorder(WavePanel, TEXT("WavePanel"));
+	ResolveBorder(ObjectivePanel, TEXT("ObjectivePanel"));
+	ResolveSizeBox(SideBarsBox, TEXT("SideBarsBox"));
+
+	if (WavePanel)
+	{
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(WavePanel->Slot))
+		{
+			CanvasSlot->SetAnchors(FAnchors(0.5f, 0.f, 0.5f, 0.f));
+			CanvasSlot->SetAlignment(FVector2D(0.5f, 0.f));
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetPosition(FVector2D(0.f, 12.f));
+			CanvasSlot->SetZOrder(5);
+		}
+	}
+
+	if (ObjectivePanel)
+	{
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(ObjectivePanel->Slot))
+		{
+			CanvasSlot->SetAnchors(FAnchors(0.f, 0.f));
+			CanvasSlot->SetAlignment(FVector2D(0.f, 0.f));
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetPosition(FVector2D(12.f, 12.f));
+			CanvasSlot->SetZOrder(5);
+		}
+	}
+
+	if (ResourceBarPanel)
+	{
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(ResourceBarPanel->Slot))
+		{
+			CanvasSlot->SetAnchors(FAnchors(0.f, 0.f));
+			CanvasSlot->SetAlignment(FVector2D(0.f, 0.f));
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetPosition(FVector2D(12.f, 56.f));
+			CanvasSlot->SetZOrder(5);
+		}
+	}
+
+	if (SideBarsBox)
+	{
+		SideBarsBox->SetWidthOverride(SideBarWidth);
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(SideBarsBox->Slot))
+		{
+			CanvasSlot->SetAnchors(FAnchors(0.f, 0.f));
+			CanvasSlot->SetAlignment(FVector2D(0.f, 0.f));
+			CanvasSlot->SetAutoSize(true);
+			CanvasSlot->SetPosition(FVector2D(12.f, 100.f));
+			CanvasSlot->SetZOrder(5);
+		}
+	}
+}
+
+UBorder* URTSGameHUD::WrapInColoredBorder(UWidget* Child, const FLinearColor& Color, const FMargin& InPadding, FName Name)
+{
+	if (!WidgetTree)
+	{
+		return nullptr;
+	}
+
+	UBorder* Border = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), Name);
+	ApplySoftPanelBrush(Border, Color);
+	Border->SetPadding(InPadding);
+	if (Child)
+	{
+		Border->SetContent(Child);
+	}
+	return Border;
+}
+
+void URTSGameHUD::ApplyDesignerChrome()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	EnsureHudStyleAssets();
+	UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+
+	// --- Wave bar (top center) ---
+	if (WavePanel)
+	{
+		ApplySoftPanelBrush(WavePanel, InfoBarBg);
+		WavePanel->SetPadding(FMargin(20.f, 8.f));
+
+		TArray<UTextBlock*> WaveTexts;
+		CollectTextBlocks(WavePanel, WaveTexts);
+		if (!WaveText && WaveTexts.Num() > 0)
+		{
+			WaveText = WaveTexts[0];
+		}
+		if (WaveTexts.Num() > 1 && !StatusText)
+		{
+			StatusText = WaveTexts[1];
+		}
+		for (UTextBlock* T : WaveTexts)
+		{
+			if (T)
+			{
+				T->SetColorAndOpacity(FSlateColor(DarkText));
+				T->SetJustification(ETextJustify::Center);
+				ApplyHudFont(T, FontTitle);
+			}
+		}
+		if (WaveText)
+		{
+			WaveText->SetText(FText::FromString(TEXT("Wave -")));
+		}
+	}
+
+	// --- Objective (top left) ---
+	if (ObjectivePanel)
+	{
+		ApplySoftPanelBrush(ObjectivePanel, InfoBarBg);
+		ObjectivePanel->SetPadding(FMargin(12.f, 8.f));
+
+		TArray<UTextBlock*> ObjTexts;
+		CollectTextBlocks(ObjectivePanel, ObjTexts);
+		if (!ObjectiveText && ObjTexts.Num() > 0)
+		{
+			ObjectiveText = ObjTexts[0];
+		}
+		if (ObjectiveText)
+		{
+			ObjectiveText->SetText(FText::FromString(TEXT("Objective: Protect the Chicken Coop")));
+			ObjectiveText->SetColorAndOpacity(FSlateColor(DarkText));
+			ObjectiveText->SetAutoWrapText(true);
+			ApplyHudFont(ObjectiveText, FontTitle);
+		}
+	}
+
+	// --- Sidebar: single column of unit cards ---
+	UVerticalBox* Sidebar = nullptr;
+	if (SideBarsBox && SideBarsBox->GetChildrenCount() > 0)
+	{
+		Sidebar = Cast<UVerticalBox>(SideBarsBox->GetChildAt(0));
+	}
+	if (!Sidebar)
+	{
+		return;
+	}
+
+	TArray<UWidget*> Kids;
+	Kids.Reserve(Sidebar->GetChildrenCount());
+	for (int32 i = 0; i < Sidebar->GetChildrenCount(); ++i)
+	{
+		Kids.Add(Sidebar->GetChildAt(i));
+	}
+	Sidebar->ClearChildren();
+
+	auto Take = [&](UWidget* W) -> UWidget*
+	{
+		return Kids.Contains(W) ? W : nullptr;
+	};
+
+	// Merged resource bar under Objective (fodder + soul).
+	if (RootCanvas)
+	{
+		if (ResourceBarPanel)
+		{
+			if (UWidget* Parent = ResourceBarPanel->GetParent())
+			{
+				Parent->RemoveFromParent();
+			}
+			else
+			{
+				ResourceBarPanel->RemoveFromParent();
+			}
+		}
+		ResourceBarPanel = WrapInColoredBorder(nullptr, InfoBarBg, FMargin(12.f, 6.f), TEXT("ResourceBarChrome"));
+		UHorizontalBox* ResRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("ResourceRowChrome"));
+		ResourceBarPanel->SetContent(ResRow);
+
+		auto AddRes = [&](UTextBlock*& Text, const TCHAR* FallbackName, const TCHAR* DefaultLabel)
+		{
+			if (!Text)
+			{
+				Text = Cast<UTextBlock>(WidgetTree->FindWidget(FallbackName));
+			}
+			if (!Text)
+			{
+				Text = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), FallbackName);
+			}
+			Take(Text);
+			Text->RemoveFromParent();
+			Text->SetColorAndOpacity(FSlateColor(DarkText));
+			Text->SetText(FText::FromString(DefaultLabel));
+			ApplyHudFont(Text, FontBody);
+			UHorizontalBoxSlot* Slot = ResRow->AddChildToHorizontalBox(Text);
+			Slot->SetVerticalAlignment(VAlign_Center);
+			Slot->SetPadding(FMargin(0.f, 0.f, 16.f, 0.f));
+		};
+		AddRes(FodderText, TEXT("FodderText"), TEXT("Fodder 0"));
+		AddRes(SoulText, TEXT("SoulText"), TEXT("Souls 0"));
+
+		USizeBox* ResWidthBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("ResourceBarWidth"));
+		ResWidthBox->SetWidthOverride(SideBarWidth);
+		ResWidthBox->SetContent(ResourceBarPanel);
+
+		UCanvasPanelSlot* ResSlot = RootCanvas->AddChildToCanvas(ResWidthBox);
+		ResSlot->SetAnchors(FAnchors(0.f, 0.f));
+		ResSlot->SetAlignment(FVector2D(0.f, 0.f));
+		ResSlot->SetAutoSize(true);
+		ResSlot->SetPosition(FVector2D(12.f, 56.f));
+		ResSlot->SetZOrder(5);
+	}
+
+	auto MakeActionButtonContent = [&](UButton* Btn, const TCHAR* Label, UTextBlock*& CostText, UImage*& CostIcon, const TCHAR* IconPath, FName CostName)
+	{
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		UTextBlock* LabelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		LabelText->SetText(FText::FromString(Label));
+		LabelText->SetColorAndOpacity(FSlateColor(CostOnDark));
+		ApplyHudFont(LabelText, FontSmall);
+		{
+			UHorizontalBoxSlot* LabelSlot = Row->AddChildToHorizontalBox(LabelText);
+			LabelSlot->SetVerticalAlignment(VAlign_Center);
+			LabelSlot->SetPadding(FMargin(0.f, 0.f, 6.f, 0.f));
+		}
+
+		if (!CostText)
+		{
+			CostText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), CostName);
+		}
+		CostText->RemoveFromParent();
+		CostText->SetColorAndOpacity(FSlateColor(CostOnDark));
+		CostText->SetText(FText::FromString(TEXT("0")));
+		ApplyHudFont(CostText, FontSmall);
+		{
+			UHorizontalBoxSlot* CostSlot = Row->AddChildToHorizontalBox(CostText);
+			CostSlot->SetVerticalAlignment(VAlign_Center);
+			CostSlot->SetPadding(FMargin(0.f, 0.f, 4.f, 0.f));
+		}
+
+		if (!CostIcon)
+		{
+			CostIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+		}
+		CostIcon->RemoveFromParent();
+		SetImageFromPath(CostIcon, IconPath, 16.f);
+		{
+			UHorizontalBoxSlot* IconSlot = Row->AddChildToHorizontalBox(CostIcon);
+			IconSlot->SetVerticalAlignment(VAlign_Center);
+		}
+
+		Btn->SetContent(Row);
+		if (UButtonSlot* BtnSlot = Cast<UButtonSlot>(Row->Slot))
+		{
+			BtnSlot->SetHorizontalAlignment(HAlign_Center);
+			BtnSlot->SetVerticalAlignment(VAlign_Center);
+			BtnSlot->SetPadding(FMargin(2.f, 1.f));
+		}
+	};
+
+	auto BuildUnitCard = [&](
+		UBorder*& CardBorder,
+		UButton* DispatchBtn,
+		UButton* UpgradeBtn,
+		UTextBlock*& LevelText,
+		UTextBlock*& DispatchCostText,
+		UTextBlock*& UpgradeCostText,
+		UImage*& UnitIcon,
+		UImage*& FodderCostIcon,
+		UImage*& SoulCostIcon,
+		const TCHAR* UnitName,
+		const TCHAR* IconPath,
+		FName CardName)
+	{
+		if (!DispatchBtn || !UpgradeBtn)
+		{
+			return;
+		}
+		Take(DispatchBtn);
+		Take(UpgradeBtn);
+		if (LevelText)
+		{
+			Take(LevelText);
+		}
+
+		if (!UnitIcon)
+		{
+			UnitIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+		}
+		UnitIcon->RemoveFromParent();
+		const float InnerIconSize = RecruitIconSize - 10.f;
+		SetImageFromPath(UnitIcon, IconPath, InnerIconSize);
+
+		UBorder* IconBadge = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
+		ApplySoftPanelBrush(IconBadge, IconBadgeBg);
+		IconBadge->SetPadding(FMargin(5.f));
+		IconBadge->SetContent(UnitIcon);
+
+		USizeBox* IconBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		IconBox->SetWidthOverride(RecruitIconSize);
+		IconBox->SetHeightOverride(RecruitIconSize);
+		IconBox->SetContent(IconBadge);
+
+		UTextBlock* NameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		NameText->SetText(FText::FromString(UnitName));
+		NameText->SetColorAndOpacity(FSlateColor(DarkText));
+		NameText->SetJustification(ETextJustify::Center);
+		ApplyHudFont(NameText, FontSmall);
+
+		UVerticalBox* LeftCol = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+		{
+			UVerticalBoxSlot* IconSlot = LeftCol->AddChildToVerticalBox(IconBox);
+			IconSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+		{
+			UVerticalBoxSlot* NameSlot = LeftCol->AddChildToVerticalBox(NameText);
+			NameSlot->SetHorizontalAlignment(HAlign_Center);
+			NameSlot->SetPadding(FMargin(0.f, 2.f, 0.f, 0.f));
+		}
+
+		if (!LevelText)
+		{
+			LevelText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		}
+		LevelText->RemoveFromParent();
+		LevelText->SetText(FText::FromString(TEXT("Lv0")));
+		LevelText->SetColorAndOpacity(FSlateColor(DarkText));
+		ApplyHudFont(LevelText, FontBody);
+
+		MakeActionButtonContent(UpgradeBtn, TEXT("Upgrade"), UpgradeCostText, SoulCostIcon, TEXT("/Game/UI/Icons/SoulIcon.SoulIcon"),
+			*FString::Printf(TEXT("UpCost_%s"), UnitName));
+		ApplySoftButtonStyle(UpgradeBtn, UpgradeBtnBg, UpgradeBtnHover, CardSelectedBg);
+
+		MakeActionButtonContent(DispatchBtn, TEXT("Dispatch"), DispatchCostText, FodderCostIcon, TEXT("/Game/UI/Icons/FodderIcon.FodderIcon"),
+			*FString::Printf(TEXT("DisCost_%s"), UnitName));
+		ApplySoftButtonStyle(DispatchBtn, DispatchBtnBg, DispatchBtnHover, CardSelectedBg);
+
+		auto WrapActionBtn = [&](UButton* Btn) -> USizeBox*
+		{
+			USizeBox* Box = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+			Box->SetMinDesiredHeight(ActionBtnMinHeight);
+			Box->SetWidthOverride(128.f);
+			Btn->RemoveFromParent();
+			Box->SetContent(Btn);
+			return Box;
+		};
+		USizeBox* UpgradeBox = WrapActionBtn(UpgradeBtn);
+		USizeBox* DispatchBox = WrapActionBtn(DispatchBtn);
+
+		UVerticalBox* ActionCol = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+		{
+			UVerticalBoxSlot* UpSlot = ActionCol->AddChildToVerticalBox(UpgradeBox);
+			UpSlot->SetHorizontalAlignment(HAlign_Fill);
+			UpSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 4.f));
+		}
+		{
+			UVerticalBoxSlot* DisSlot = ActionCol->AddChildToVerticalBox(DispatchBox);
+			DisSlot->SetHorizontalAlignment(HAlign_Fill);
+		}
+
+		UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+		{
+			UHorizontalBoxSlot* LeftSlot = Row->AddChildToHorizontalBox(LeftCol);
+			LeftSlot->SetVerticalAlignment(VAlign_Center);
+			LeftSlot->SetPadding(FMargin(2.f));
+		}
+		{
+			UHorizontalBoxSlot* LvSlot = Row->AddChildToHorizontalBox(LevelText);
+			LvSlot->SetVerticalAlignment(VAlign_Center);
+			LvSlot->SetPadding(FMargin(6.f, 0.f, 6.f, 0.f));
+			LvSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		}
+		{
+			UHorizontalBoxSlot* ActSlot = Row->AddChildToHorizontalBox(ActionCol);
+			ActSlot->SetVerticalAlignment(VAlign_Center);
+			ActSlot->SetHorizontalAlignment(HAlign_Right);
+			ActSlot->SetPadding(FMargin(2.f));
+		}
+
+		CardBorder = WrapInColoredBorder(Row, CardNormalBg, FMargin(4.f), CardName);
+		UVerticalBoxSlot* CardSlot = Sidebar->AddChildToVerticalBox(CardBorder);
+		CardSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 6.f));
+		CardSlot->SetHorizontalAlignment(HAlign_Fill);
+	};
+
+	BuildUnitCard(UnitCardRabbit, BtnRabbit, BtnUpgradeRabbit, UpgradeRabbitText, CostRabbitText, UpgradeCostRabbitText,
+		IconRabbit, IconFodderCostRabbit, IconSoulCostRabbit, TEXT("Rabbit"), TEXT("/Game/UI/Icons/T_Icon_Rabbit.T_Icon_Rabbit"), TEXT("UnitCardRabbit"));
+	BuildUnitCard(UnitCardChicken, BtnChicken, BtnUpgradeChicken, UpgradeChickenText, CostChickenText, UpgradeCostChickenText,
+		IconChicken, IconFodderCostChicken, IconSoulCostChicken, TEXT("Chicken"), TEXT("/Game/UI/Icons/T_Icon_Chicken.T_Icon_Chicken"), TEXT("UnitCardChicken"));
+	BuildUnitCard(UnitCardSheep, BtnSheep, BtnUpgradeSheep, UpgradeSheepText, CostSheepText, UpgradeCostSheepText,
+		IconSheep, IconFodderCostSheep, IconSoulCostSheep, TEXT("Sheep"), TEXT("/Game/UI/Icons/T_Icon_Sheep.T_Icon_Sheep"), TEXT("UnitCardSheep"));
+	BuildUnitCard(UnitCardPig, BtnPig, BtnUpgradePig, UpgradePigText, CostPigText, UpgradeCostPigText,
+		IconPig, IconFodderCostPig, IconSoulCostPig, TEXT("Pig"), TEXT("/Game/UI/Icons/T_Icon_Pig.T_Icon_Pig"), TEXT("UnitCardPig"));
+
+	for (UWidget* W : Kids)
+	{
+		if (W && W->GetParent() == nullptr && W != FodderText && W != SoulText)
+		{
+			Sidebar->AddChildToVerticalBox(W);
+		}
+	}
+
+	if (SideBarsBox)
+	{
+		SideBarsBox->SetWidthOverride(SideBarWidth);
+		if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(SideBarsBox->Slot))
+		{
+			CanvasSlot->SetPosition(FVector2D(12.f, 100.f));
+		}
+	}
+}
+
+void URTSGameHUD::SetImageFromPath(UImage* Image, const TCHAR* TexturePath, float BrushSize)
+{
+	if (!Image || !TexturePath)
+	{
+		return;
+	}
+
+	UTexture2D* Tex = LoadTextureFromPath(TexturePath);
+	if (!Tex)
+	{
+		return;
+	}
+
+	Image->SetBrushFromTexture(Tex, true);
+	Image->SetBrushSize(FVector2D(BrushSize, BrushSize));
+	Image->SetVisibility(ESlateVisibility::HitTestInvisible);
+}
+
+UTexture2D* URTSGameHUD::LoadTextureFromPath(const TCHAR* TexturePath)
+{
+	return TexturePath ? LoadObject<UTexture2D>(nullptr, TexturePath) : nullptr;
+}
+
+UImage* URTSGameHUD::EnsureIconAfterWidget(UWidget* BeforeWidget, UImage*& IconSlot, FName IconName, const TCHAR* TexturePath, float BrushSize)
+{
+	if (!WidgetTree || !BeforeWidget)
+	{
+		return nullptr;
+	}
+
+	if (!IconSlot)
+	{
+		IconSlot = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), IconName);
+	}
+	SetImageFromPath(IconSlot, TexturePath, BrushSize);
+	if (!IconSlot)
+	{
+		return nullptr;
+	}
+
+	// Already paired: parent is a tiny HBox that only holds text + this icon.
+	if (UHorizontalBox* Pair = Cast<UHorizontalBox>(BeforeWidget->GetParent()))
+	{
+		if (Pair->GetChildIndex(IconSlot) != INDEX_NONE && Pair->GetChildrenCount() <= 3)
+		{
+			return IconSlot;
+		}
+	}
+
+	UPanelWidget* Parent = Cast<UPanelWidget>(BeforeWidget->GetParent());
+	if (!Parent)
+	{
+		return IconSlot;
+	}
+
+	// Wrap [BeforeWidget + Icon] as one unit so siblings (e.g. Up button) keep their layout.
+	TArray<UWidget*> Order;
+	for (int32 i = 0; i < Parent->GetChildrenCount(); ++i)
+	{
+		UWidget* Child = Parent->GetChildAt(i);
+		if (Child && Child != IconSlot)
+		{
+			Order.Add(Child);
+		}
+	}
+
+	UHorizontalBox* PairBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	BeforeWidget->RemoveFromParent();
+	IconSlot->RemoveFromParent();
+	{
+		UHorizontalBoxSlot* TextSlot = PairBox->AddChildToHorizontalBox(BeforeWidget);
+		TextSlot->SetVerticalAlignment(VAlign_Center);
+		TextSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		TextSlot->SetPadding(FMargin(0.f));
+	}
+	{
+		UHorizontalBoxSlot* IconAdded = PairBox->AddChildToHorizontalBox(IconSlot);
+		IconAdded->SetPadding(FMargin(6.f, 0.f, 0.f, 0.f));
+		IconAdded->SetVerticalAlignment(VAlign_Center);
+		IconAdded->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+
+	if (UHorizontalBox* HParent = Cast<UHorizontalBox>(Parent))
+	{
+		HParent->ClearChildren();
+		for (UWidget* Original : Order)
+		{
+			UWidget* W = (Original == BeforeWidget) ? static_cast<UWidget*>(PairBox) : Original;
+			UHorizontalBoxSlot* Added = HParent->AddChildToHorizontalBox(W);
+			Added->SetVerticalAlignment(VAlign_Center);
+			if (W == PairBox)
+			{
+				Added->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				Added->SetPadding(FMargin(4.f, 2.f, 10.f, 2.f));
+			}
+			else if (Cast<UButton>(W))
+			{
+				Added->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				Added->SetPadding(FMargin(10.f, 2.f, 4.f, 2.f));
+				Added->SetHorizontalAlignment(HAlign_Right);
+			}
+			else if (Cast<UTextBlock>(W))
+			{
+				Added->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+				Added->SetPadding(FMargin(6.f, 4.f));
+			}
+			else
+			{
+				Added->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+				Added->SetPadding(FMargin(6.f, 4.f));
+			}
+		}
+		return IconSlot;
+	}
+
+	if (UBorder* BorderParent = Cast<UBorder>(Parent))
+	{
+		BorderParent->SetContent(PairBox);
+		return IconSlot;
+	}
+
+	if (UVerticalBox* VParent = Cast<UVerticalBox>(Parent))
+	{
+		VParent->ClearChildren();
+		for (UWidget* W : Order)
+		{
+			UWidget* ToAdd = (W == BeforeWidget) ? static_cast<UWidget*>(PairBox) : W;
+			UVerticalBoxSlot* Added = VParent->AddChildToVerticalBox(ToAdd);
+			Added->SetPadding(FMargin(0.f, 2.f));
+			Added->SetHorizontalAlignment(HAlign_Right);
+		}
+		return IconSlot;
+	}
+
+	return IconSlot;
+}
+
+void URTSGameHUD::ApplyUnitIcons()
+{
+	// Resolve icons by BindWidget, or fall back to finding by name in the tree
+	// (avoids needing Details panel to assign brushes in the WBP designer).
+	auto Resolve = [this](UImage*& OutIcon, const TCHAR* WidgetName) -> UImage*
+	{
+		if (OutIcon)
+		{
+			return OutIcon;
+		}
+		if (WidgetTree)
+		{
+			if (UWidget* Found = WidgetTree->FindWidget(WidgetName))
+			{
+				OutIcon = Cast<UImage>(Found);
+				return OutIcon;
+			}
+		}
+		return nullptr;
+	};
+
+	SetImageFromPath(Resolve(IconRabbit, TEXT("IconRabbit")), TEXT("/Game/UI/Icons/T_Icon_Rabbit.T_Icon_Rabbit"), RecruitIconSize);
+	SetImageFromPath(Resolve(IconChicken, TEXT("IconChicken")), TEXT("/Game/UI/Icons/T_Icon_Chicken.T_Icon_Chicken"), RecruitIconSize);
+	SetImageFromPath(Resolve(IconSheep, TEXT("IconSheep")), TEXT("/Game/UI/Icons/T_Icon_Sheep.T_Icon_Sheep"), RecruitIconSize);
+	SetImageFromPath(Resolve(IconPig, TEXT("IconPig")), TEXT("/Game/UI/Icons/T_Icon_Pig.T_Icon_Pig"), RecruitIconSize);
+}
+
+void URTSGameHUD::ApplyResourceIcons()
+{
+	constexpr float HeaderIconSize = 24.f;
+	const TCHAR* SoulPath = TEXT("/Game/UI/Icons/SoulIcon.SoulIcon");
+	const TCHAR* FodderPath = TEXT("/Game/UI/Icons/FodderIcon.FodderIcon");
+
+	// Header totals only — per-card cost icons are built inside action buttons.
+	EnsureIconAfterWidget(FodderText, IconFodderHeader, TEXT("IconFodderHeader"), FodderPath, HeaderIconSize);
+	EnsureIconAfterWidget(SoulText, IconSoul, TEXT("IconSoul"), SoulPath, HeaderIconSize);
 }
 
 void URTSGameHUD::PlayDialogueSequence(ERTSDialogueKind Kind)
@@ -558,6 +1993,7 @@ void URTSGameHUD::PlayDialogueSequence(ERTSDialogueKind Kind)
 
 	SetGameplayHudVisible(false);
 
+	ApplyDialogueDesignerLayout();
 	if (DialoguePanel)
 	{
 		DialoguePanel->SetVisibility(ESlateVisibility::Visible);
@@ -578,11 +2014,14 @@ void URTSGameHUD::ApplyDialogueLine()
 
 	if (DialogueNameText)
 	{
+		DialogueNameText->SetColorAndOpacity(FSlateColor(DarkText));
 		DialogueNameText->SetText(FText::FromString(
 			DialogueSpeakers.IsValidIndex(DialogueLineIndex) ? DialogueSpeakers[DialogueLineIndex] : TEXT("?")));
 	}
 	if (DialogueBodyText)
 	{
+		DialogueBodyText->SetColorAndOpacity(FSlateColor(DarkText));
+		DialogueBodyText->SetAutoWrapText(true);
 		DialogueBodyText->SetText(FText::FromString(DialogueBodies[DialogueLineIndex]));
 	}
 }
@@ -651,24 +2090,43 @@ void URTSGameHUD::ShowResultScreen(bool bVictory)
 		ResultPanel->SetVisibility(ESlateVisibility::Visible);
 	}
 
+	if (ResultCard)
+	{
+		ApplySoftPanelBrush(ResultCard, ModalCardBg);
+	}
+	if (ResultTitlePlate)
+	{
+		ApplySoftPanelBrush(ResultTitlePlate, NamePlateBg);
+	}
+
 	if (ResultTitleText)
 	{
-		if (bVictory)
-		{
-			ResultTitleText->SetText(FText::FromString(TEXT("Victory\nFox-Wolf Coalition Repelled!")));
-			ResultTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.35f, 0.95f, 0.4f)));
-		}
-		else
-		{
-			ResultTitleText->SetText(FText::FromString(TEXT("Defeat\nThe chicken coop was destroyed")));
-			ResultTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(1.f, 0.35f, 0.3f)));
-		}
+		ResultTitleText->SetText(FText::FromString(bVictory ? TEXT("Victory") : TEXT("Defeat")));
+		ResultTitleText->SetColorAndOpacity(FSlateColor(DarkText));
+		ApplyHudFont(ResultTitleText, FontModalTitle);
+	}
+	if (ResultBodyText)
+	{
+		ResultBodyText->SetText(FText::FromString(bVictory
+			? TEXT("Fox-Wolf Coalition Repelled!")
+			: TEXT("The chicken coop was destroyed.")));
+		ResultBodyText->SetColorAndOpacity(FSlateColor(DarkText));
+		ApplyHudFont(ResultBodyText, FontBody);
 	}
 
 	if (PrimaryResultLabel)
 	{
 		PrimaryResultLabel->SetText(FText::FromString(bVictory ? TEXT("Next Level") : TEXT("Replay")));
+		PrimaryResultLabel->SetColorAndOpacity(FSlateColor(CostOnDark));
+		ApplyHudFont(PrimaryResultLabel, FontBody);
 	}
+	if (QuitResultLabel)
+	{
+		QuitResultLabel->SetColorAndOpacity(FSlateColor(CostOnDark));
+		ApplyHudFont(QuitResultLabel, FontBody);
+	}
+	ApplySoftButtonStyle(BtnPrimaryResult, DispatchBtnBg, DispatchBtnHover, CardSelectedBg);
+	ApplySoftButtonStyle(BtnQuit, QuitBtnBg, QuitBtnHover, CardSelectedBg);
 
 	UGameplayStatics::SetGamePaused(this, true);
 	EnterUIOnlyMode();
@@ -706,7 +2164,7 @@ void URTSGameHUD::EnterGameAndUIMode()
 UBorder* URTSGameHUD::MakeHeaderBar(UPanelWidget* Parent, const FString& Title, UTextBlock*& OutText, FName TextName)
 {
 	UBorder* Header = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-	Header->SetBrushColor(HeaderBarBg);
+	Header->SetBrushColor(InfoBarBg);
 	Header->SetPadding(FMargin(10.f, 6.f));
 	if (UVerticalBox* VParent = Cast<UVerticalBox>(Parent))
 	{
@@ -733,45 +2191,102 @@ void URTSGameHUD::MakeUnitSlot(UPanelWidget* Parent, const FString& Title, FName
 		Style.Normal.TintColor = FSlateColor(CardNormalBg);
 		Style.Hovered.TintColor = FSlateColor(FLinearColor(1.f, 0.85f, 0.6f, 0.95f));
 		Style.Pressed.TintColor = FSlateColor(CardSelectedBg);
+		Style.NormalPadding = FMargin(0.f);
+		Style.PressedPadding = FMargin(0.f);
 		OutButton->SetStyle(Style);
+	}
+
+	USizeBox* HitPad = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	HitPad->SetMinDesiredHeight(RecruitIconSize + 8.f);
+	OutButton->SetContent(HitPad);
+	if (UButtonSlot* BtnSlot = Cast<UButtonSlot>(HitPad->Slot))
+	{
+		BtnSlot->SetHorizontalAlignment(HAlign_Fill);
+		BtnSlot->SetVerticalAlignment(VAlign_Fill);
+		BtnSlot->SetPadding(FMargin(0.f));
+	}
+
+	UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+	Icon->SetBrushSize(FVector2D(RecruitIconSize, RecruitIconSize));
+	USizeBox* IconBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+	IconBox->SetWidthOverride(RecruitIconSize);
+	IconBox->SetHeightOverride(RecruitIconSize);
+	IconBox->SetContent(Icon);
+	if (Title == TEXT("Rabbit")) { IconRabbit = Icon; }
+	else if (Title == TEXT("Chicken")) { IconChicken = Icon; }
+	else if (Title == TEXT("Sheep")) { IconSheep = Icon; }
+	else if (Title == TEXT("Pig")) { IconPig = Icon; }
+
+	UTextBlock* NameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	NameText->SetText(FText::FromString(Title));
+	NameText->SetColorAndOpacity(FSlateColor(DarkText));
+	NameText->SetJustification(ETextJustify::Right);
+
+	OutCostText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+	OutCostText->SetText(FText::FromString(TEXT("?")));
+	OutCostText->SetColorAndOpacity(FSlateColor(DarkText));
+	OutCostText->SetJustification(ETextJustify::Right);
+
+	UVerticalBox* InfoCol = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+	{
+		UVerticalBoxSlot* NameSlot = InfoCol->AddChildToVerticalBox(NameText);
+		NameSlot->SetHorizontalAlignment(HAlign_Right);
+		NameSlot->SetPadding(FMargin(0.f, 0.f, 0.f, 2.f));
+	}
+	{
+		UVerticalBoxSlot* CostSlot = InfoCol->AddChildToVerticalBox(OutCostText);
+		CostSlot->SetHorizontalAlignment(HAlign_Right);
+	}
+
+	UHorizontalBox* ContentRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	ContentRow->SetVisibility(ESlateVisibility::HitTestInvisible);
+	{
+		UHorizontalBoxSlot* IconSlot = ContentRow->AddChildToHorizontalBox(IconBox);
+		IconSlot->SetPadding(FMargin(4.f, 4.f, 0.f, 4.f));
+		IconSlot->SetVerticalAlignment(VAlign_Center);
+		IconSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+	}
+	{
+		USpacer* MidSpacer = WidgetTree->ConstructWidget<USpacer>(USpacer::StaticClass());
+		UHorizontalBoxSlot* SpacerSlot = ContentRow->AddChildToHorizontalBox(MidSpacer);
+		SpacerSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+	{
+		UHorizontalBoxSlot* InfoSlot = ContentRow->AddChildToHorizontalBox(InfoCol);
+		InfoSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		InfoSlot->SetPadding(FMargin(0.f, 4.f, 8.f, 4.f));
+		InfoSlot->SetVerticalAlignment(VAlign_Center);
+		InfoSlot->SetHorizontalAlignment(HAlign_Right);
+	}
+
+	UOverlay* SlotOverlay = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass());
+	{
+		UOverlaySlot* BtnOvl = SlotOverlay->AddChildToOverlay(OutButton);
+		BtnOvl->SetHorizontalAlignment(HAlign_Fill);
+		BtnOvl->SetVerticalAlignment(VAlign_Fill);
+	}
+	{
+		UOverlaySlot* RowOvl = SlotOverlay->AddChildToOverlay(ContentRow);
+		RowOvl->SetHorizontalAlignment(HAlign_Fill);
+		RowOvl->SetVerticalAlignment(VAlign_Center);
+		RowOvl->SetPadding(FMargin(2.f));
 	}
 
 	if (UVerticalBox* VParent = Cast<UVerticalBox>(Parent))
 	{
-		UVerticalBoxSlot* BoxSlot = VParent->AddChildToVerticalBox(OutButton);
+		UVerticalBoxSlot* BoxSlot = VParent->AddChildToVerticalBox(SlotOverlay);
 		BoxSlot->SetPadding(FMargin(0.f, 3.f));
+		BoxSlot->SetHorizontalAlignment(HAlign_Fill);
 	}
 	else if (UHorizontalBox* HParent = Cast<UHorizontalBox>(Parent))
 	{
-		UHorizontalBoxSlot* BoxSlot = HParent->AddChildToHorizontalBox(OutButton);
+		UHorizontalBoxSlot* BoxSlot = HParent->AddChildToHorizontalBox(SlotOverlay);
 		BoxSlot->SetPadding(FMargin(3.f, 0.f));
 		BoxSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	}
 	else
 	{
-		Parent->AddChild(OutButton);
-	}
-
-	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-	OutButton->AddChild(Row);
-
-	UTextBlock* NameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-	NameText->SetText(FText::FromString(Title));
-	NameText->SetColorAndOpacity(FSlateColor(DarkText));
-	{
-		UHorizontalBoxSlot* NameSlot = Row->AddChildToHorizontalBox(NameText);
-		NameSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		NameSlot->SetPadding(FMargin(8.f, 6.f));
-		NameSlot->SetVerticalAlignment(VAlign_Center);
-	}
-
-	OutCostText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-	OutCostText->SetText(FText::FromString(TEXT("?")));
-	OutCostText->SetColorAndOpacity(FSlateColor(FLinearColor(0.15f, 0.45f, 0.2f)));
-	{
-		UHorizontalBoxSlot* CostSlot = Row->AddChildToHorizontalBox(OutCostText);
-		CostSlot->SetPadding(FMargin(8.f, 6.f));
-		CostSlot->SetVerticalAlignment(VAlign_Center);
+		Parent->AddChild(SlotOverlay);
 	}
 }
 
@@ -822,17 +2337,17 @@ UButton* URTSGameHUD::MakeLabeledButton(UPanelWidget* Parent, const FString& Lab
 
 void URTSGameHUD::BindFallbackButtonHandlers()
 {
-	if (BtnRabbit) { BtnRabbit->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitRabbit); }
-	if (BtnChicken) { BtnChicken->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitChicken); }
-	if (BtnSheep) { BtnSheep->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitSheep); }
-	if (BtnPig) { BtnPig->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitPig); }
-	if (BtnUpgradeRabbit) { BtnUpgradeRabbit->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradeRabbit); }
-	if (BtnUpgradeChicken) { BtnUpgradeChicken->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradeChicken); }
-	if (BtnUpgradeSheep) { BtnUpgradeSheep->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradeSheep); }
-	if (BtnUpgradePig) { BtnUpgradePig->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradePig); }
-	if (BtnDialogueAdvance) { BtnDialogueAdvance->OnClicked.AddDynamic(this, &URTSGameHUD::OnDialogueClicked); }
-	if (BtnPrimaryResult) { BtnPrimaryResult->OnClicked.AddDynamic(this, &URTSGameHUD::OnPrimaryResult); }
-	if (BtnQuit) { BtnQuit->OnClicked.AddDynamic(this, &URTSGameHUD::OnQuit); }
+	if (BtnRabbit) { BtnRabbit->OnClicked.Clear(); BtnRabbit->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitRabbit); }
+	if (BtnChicken) { BtnChicken->OnClicked.Clear(); BtnChicken->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitChicken); }
+	if (BtnSheep) { BtnSheep->OnClicked.Clear(); BtnSheep->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitSheep); }
+	if (BtnPig) { BtnPig->OnClicked.Clear(); BtnPig->OnClicked.AddDynamic(this, &URTSGameHUD::OnRecruitPig); }
+	if (BtnUpgradeRabbit) { BtnUpgradeRabbit->OnClicked.Clear(); BtnUpgradeRabbit->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradeRabbit); }
+	if (BtnUpgradeChicken) { BtnUpgradeChicken->OnClicked.Clear(); BtnUpgradeChicken->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradeChicken); }
+	if (BtnUpgradeSheep) { BtnUpgradeSheep->OnClicked.Clear(); BtnUpgradeSheep->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradeSheep); }
+	if (BtnUpgradePig) { BtnUpgradePig->OnClicked.Clear(); BtnUpgradePig->OnClicked.AddDynamic(this, &URTSGameHUD::OnUpgradePig); }
+	if (BtnDialogueAdvance) { BtnDialogueAdvance->OnClicked.Clear(); BtnDialogueAdvance->OnClicked.AddDynamic(this, &URTSGameHUD::OnDialogueClicked); }
+	if (BtnPrimaryResult) { BtnPrimaryResult->OnClicked.Clear(); BtnPrimaryResult->OnClicked.AddDynamic(this, &URTSGameHUD::OnPrimaryResult); }
+	if (BtnQuit) { BtnQuit->OnClicked.Clear(); BtnQuit->OnClicked.AddDynamic(this, &URTSGameHUD::OnQuit); }
 }
 
 void URTSGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -841,6 +2356,7 @@ void URTSGameHUD::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	RefreshTexts();
 	RefreshCardHighlights();
 	TickUpgradeToast(InDeltaTime);
+	UpdateWorldLabels();
 }
 
 void URTSGameHUD::RefreshTexts()
@@ -876,63 +2392,42 @@ void URTSGameHUD::RefreshTexts()
 		StatusText->SetText(GM->GetStatusText());
 	}
 
-	auto SetCost = [&](UTextBlock* Text, ERTSUnitType Type)
-	{
-		if (Text)
-		{
-			Text->SetText(FText::FromString(FString::Printf(TEXT("%d"), GM->GetEffectiveFodderCost(Type))));
-		}
-	};
-	SetCost(CostRabbitText, ERTSUnitType::Rabbit);
-	SetCost(CostChickenText, ERTSUnitType::Chicken);
-	SetCost(CostSheepText, ERTSUnitType::Sheep);
-	SetCost(CostPigText, ERTSUnitType::Pig);
+	RefreshRecruitSlot(BtnRabbit, CostRabbitText, GM->GetEffectiveFodderCost(ERTSUnitType::Rabbit), GM->Fodder);
+	RefreshRecruitSlot(BtnChicken, CostChickenText, GM->GetEffectiveFodderCost(ERTSUnitType::Chicken), GM->Fodder);
+	RefreshRecruitSlot(BtnSheep, CostSheepText, GM->GetEffectiveFodderCost(ERTSUnitType::Sheep), GM->Fodder);
+	RefreshRecruitSlot(BtnPig, CostPigText, GM->GetEffectiveFodderCost(ERTSUnitType::Pig), GM->Fodder);
 
-	auto SetUpgrade = [&](UTextBlock* Text, UButton* Btn, ERTSUnitType Type, const TCHAR* Name)
-	{
-		const int32 Lv = GM->GetUnitUpgradeLevel(Type);
-		if (Text)
-		{
-			if (Lv >= 3)
-			{
-				Text->SetText(FText::FromString(FString::Printf(TEXT("%s Lv3"), Name)));
-			}
-			else
-			{
-				Text->SetText(FText::FromString(FString::Printf(
-					TEXT("%s Lv%d (%d)"), Name, Lv, GM->GetUpgradeCost(Lv + 1))));
-			}
-		}
-		if (Btn)
-		{
-			Btn->SetIsEnabled(Lv < 3 && GM->Soul >= GM->GetUpgradeCost(Lv + 1));
-		}
-	};
-	SetUpgrade(UpgradeRabbitText, BtnUpgradeRabbit, ERTSUnitType::Rabbit, TEXT("Rabbit"));
-	SetUpgrade(UpgradeChickenText, BtnUpgradeChicken, ERTSUnitType::Chicken, TEXT("Chicken"));
-	SetUpgrade(UpgradeSheepText, BtnUpgradeSheep, ERTSUnitType::Sheep, TEXT("Sheep"));
-	SetUpgrade(UpgradePigText, BtnUpgradePig, ERTSUnitType::Pig, TEXT("Pig"));
+	RefreshUpgradeSlot(BtnUpgradeRabbit, UpgradeRabbitText, UpgradeCostRabbitText, IconSoulCostRabbit, ERTSUnitType::Rabbit, GM);
+	RefreshUpgradeSlot(BtnUpgradeChicken, UpgradeChickenText, UpgradeCostChickenText, IconSoulCostChicken, ERTSUnitType::Chicken, GM);
+	RefreshUpgradeSlot(BtnUpgradeSheep, UpgradeSheepText, UpgradeCostSheepText, IconSoulCostSheep, ERTSUnitType::Sheep, GM);
+	RefreshUpgradeSlot(BtnUpgradePig, UpgradePigText, UpgradeCostPigText, IconSoulCostPig, ERTSUnitType::Pig, GM);
+
+	ApplyResourceIcons();
 }
 
 void URTSGameHUD::RefreshCardHighlights()
 {
 	ARTSPlayerController* PC = Cast<ARTSPlayerController>(GetOwningPlayer());
-	auto Tint = [&](UButton* Btn, ERTSUnitType Type)
+	auto TintDispatch = [&](UButton* Btn, UBorder* Card, ERTSUnitType Type)
 	{
-		if (!Btn)
-		{
-			return;
-		}
 		const bool bSel = PC && PC->bPlacementPending && PC->PendingRecruitType == Type;
-		FButtonStyle Style = Btn->WidgetStyle;
-		Style.Normal.TintColor = FSlateColor(bSel ? CardSelectedBg : CardNormalBg);
-		Style.Hovered.TintColor = FSlateColor(bSel ? CardSelectedBg : FLinearColor(1.f, 0.85f, 0.6f, 0.95f));
-		Btn->SetStyle(Style);
+		if (Btn)
+		{
+			ApplySoftButtonStyle(
+				Btn,
+				bSel ? CardSelectedBg : DispatchBtnBg,
+				bSel ? CardSelectedBg : DispatchBtnHover,
+				CardSelectedBg);
+		}
+		if (Card)
+		{
+			ApplySoftPanelBrush(Card, bSel ? CardSelectedBg : CardNormalBg);
+		}
 	};
-	Tint(BtnRabbit, ERTSUnitType::Rabbit);
-	Tint(BtnChicken, ERTSUnitType::Chicken);
-	Tint(BtnSheep, ERTSUnitType::Sheep);
-	Tint(BtnPig, ERTSUnitType::Pig);
+	TintDispatch(BtnRabbit, UnitCardRabbit, ERTSUnitType::Rabbit);
+	TintDispatch(BtnChicken, UnitCardChicken, ERTSUnitType::Chicken);
+	TintDispatch(BtnSheep, UnitCardSheep, ERTSUnitType::Sheep);
+	TintDispatch(BtnPig, UnitCardPig, ERTSUnitType::Pig);
 }
 
 void URTSGameHUD::OnRecruitRabbit()

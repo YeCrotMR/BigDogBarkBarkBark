@@ -10,6 +10,9 @@
 class UButton;
 class UTextBlock;
 class UHorizontalBox;
+class UBorder;
+class UFont;
+class UTexture2D;
 class ARTSUnitModeRing;
 
 UCLASS()
@@ -26,6 +29,11 @@ protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 
 	void BuildLayout();
+	void EnsureStyleAssets();
+	UTexture2D* CreateRoundPanelTexture();
+	void ApplyRoundPanelBrush(UBorder* Border, const FLinearColor& Tint);
+	void ApplyRoundButtonStyle(UButton* Btn, const FLinearColor& Normal, const FLinearColor& Hovered);
+	void ApplyModeFont(UTextBlock* Text, int32 Size) const;
 
 	UFUNCTION()
 	void OnCombatClicked();
@@ -41,6 +49,12 @@ protected:
 
 	UPROPERTY()
 	TWeakObjectPtr<ARTSUnitModeRing> OwnerRing;
+
+	UPROPERTY()
+	UFont* ModeFont = nullptr;
+
+	UPROPERTY()
+	UTexture2D* RoundPanelTexture = nullptr;
 
 	bool bBuilt = false;
 };

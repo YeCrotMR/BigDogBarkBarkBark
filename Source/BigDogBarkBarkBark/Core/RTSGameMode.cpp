@@ -15,6 +15,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 
 ARTSGameMode::ARTSGameMode()
 {
@@ -23,6 +24,13 @@ ARTSGameMode::ARTSGameMode()
 	HUDClass = ARTSHUD::StaticClass();
 	FarmUnitClass = ARTSUnitBase::StaticClass();
 	HUDWidgetClass = URTSGameHUD::StaticClass();
+
+	// Prefer designer Widget Blueprint when present (Content/UI/WBP_RTSGameHUD).
+	static ConstructorHelpers::FClassFinder<URTSGameHUD> HudBP(TEXT("/Game/UI/WBP_RTSGameHUD"));
+	if (HudBP.Succeeded())
+	{
+		HUDWidgetClass = HudBP.Class;
+	}
 }
 
 void ARTSGameMode::EnsureCoreClasses()

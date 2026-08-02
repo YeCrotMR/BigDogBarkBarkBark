@@ -9,12 +9,16 @@
 
 class UTextBlock;
 class UButton;
+class UImage;
 class UVerticalBox;
 class UHorizontalBox;
 class UCanvasPanel;
 class UCanvasPanelSlot;
 class UBorder;
 class USizeBox;
+class UFont;
+class UTexture2D;
+class ARTSGameMode;
 
 UENUM(BlueprintType)
 enum class ERTSDialogueKind : uint8
@@ -66,8 +70,10 @@ protected:
 	void RefreshTexts();
 	void RefreshCardHighlights();
 	void EnsureDialogueOverlay();
+	void ApplyDialogueDesignerLayout();
 	void EnsureResultOverlay();
 	void EnsureUpgradeToast();
+	void RefreshUpgradeToastRestY();
 	void TickUpgradeToast(float DeltaTime);
 	static FString UnitTypeDisplayName(ERTSUnitType Type);
 	static FString UpgradeBonusText(int32 NewLevel);
@@ -76,6 +82,27 @@ protected:
 	void EnterUIOnlyMode();
 	void EnterGameAndUIMode();
 	void LoadDialogueLines(ERTSDialogueKind Kind);
+	void ApplyUnitIcons();
+	void ApplyResourceIcons();
+	void ApplyDesignerLayout();
+	void ApplyDesignerChrome();
+	void ResolveDesignerBindings();
+	static void SetImageFromPath(UImage* Image, const TCHAR* TexturePath, float BrushSize = 48.f);
+	static UTexture2D* LoadTextureFromPath(const TCHAR* TexturePath);
+	static void CollectTextBlocks(UWidget* Root, TArray<UTextBlock*>& OutTexts);
+	void EnsureHudStyleAssets();
+	void ApplyHudFont(UTextBlock* Text, int32 Size) const;
+	UTexture2D* CreateRoundPanelTexture();
+	void ApplySoftPanelBrush(UBorder* Border, const FLinearColor& Tint);
+	void ApplySoftButtonStyle(UButton* Btn, const FLinearColor& Normal, const FLinearColor& Hovered, const FLinearColor& Pressed);
+	void EnsureWorldLabelLayer();
+	void UpdateWorldLabels();
+	UTextBlock* AcquireWorldLabel(int32 Index, const FString& Text, const FLinearColor& Color);
+	UImage* EnsureIconAfterWidget(UWidget* BeforeWidget, UImage*& IconSlot, FName IconName, const TCHAR* TexturePath, float BrushSize);
+	void RefreshRecruitSlot(UButton* Button, UTextBlock* CostText, int32 Cost, int32 AvailableFodder);
+	void RefreshUpgradeSlot(UButton* Button, UTextBlock*& LevelText, UTextBlock*& CostText, UImage* CostIcon, ERTSUnitType Type, ARTSGameMode* GM);
+
+	UBorder* WrapInColoredBorder(UWidget* Child, const FLinearColor& Color, const FMargin& InPadding, FName Name);
 
 	UButton* MakeLabeledButton(UPanelWidget* Parent, const FString& Label, FName Name);
 	UBorder* MakeHeaderBar(UPanelWidget* Parent, const FString& Title, UTextBlock*& OutText, FName TextName);
@@ -107,6 +134,9 @@ protected:
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* StatusText = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UTextBlock* ObjectiveText = nullptr;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	UButton* BtnRabbit = nullptr;
@@ -156,31 +186,99 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* UpgradePigText = nullptr;
 
-	// Dialogue overlay
+	/** Optional unit icons — name these exactly in WBP (or place Image inside each Btn*). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	UImage* IconRabbit = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UImage* IconChicken = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UImage* IconSheep = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	UImage* IconPig = nullptr;
+
 	UPROPERTY()
+	UImage* IconSoul = nullptr;
+
+	UPROPERTY()
+	UImage* IconFodderHeader = nullptr;
+
+	UPROPERTY()
+	UImage* IconFodderCostRabbit = nullptr;
+
+	UPROPERTY()
+	UImage* IconFodderCostChicken = nullptr;
+
+	UPROPERTY()
+	UImage* IconFodderCostSheep = nullptr;
+
+	UPROPERTY()
+	UImage* IconFodderCostPig = nullptr;
+
+	UPROPERTY()
+	UImage* IconSoulCostRabbit = nullptr;
+
+	UPROPERTY()
+	UImage* IconSoulCostChicken = nullptr;
+
+	UPROPERTY()
+	UImage* IconSoulCostSheep = nullptr;
+
+	UPROPERTY()
+	UImage* IconSoulCostPig = nullptr;
+
+	UPROPERTY()
+	UTextBlock* UpgradeCostRabbitText = nullptr;
+
+	UPROPERTY()
+	UTextBlock* UpgradeCostChickenText = nullptr;
+
+	UPROPERTY()
+	UTextBlock* UpgradeCostSheepText = nullptr;
+
+	UPROPERTY()
+	UTextBlock* UpgradeCostPigText = nullptr;
+
+	// Dialogue overlay — prefer WBP BindWidget names; C++ EnsureDialogueOverlay is fallback.
+	UPROPERTY(meta = (BindWidgetOptional))
 	UBorder* DialoguePanel = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UBorder* PortraitBlock = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UBorder* NamePlate = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* DialogueNameText = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UTextBlock* DialogueBodyText = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UButton* BtnDialogueAdvance = nullptr;
+
+	/** Optional portrait image inside / instead of PortraitBlock (name: DialoguePortrait). */
+	UPROPERTY(meta = (BindWidgetOptional))
+	UImage* DialoguePortrait = nullptr;
 
 	// Result overlay (victory / defeat)
 	UPROPERTY()
 	UBorder* ResultPanel = nullptr;
 
 	UPROPERTY()
+	UBorder* ResultCard = nullptr;
+
+	UPROPERTY()
+	UBorder* ResultTitlePlate = nullptr;
+
+	UPROPERTY()
 	UTextBlock* ResultTitleText = nullptr;
+
+	UPROPERTY()
+	UTextBlock* ResultBodyText = nullptr;
 
 	UPROPERTY()
 	UButton* BtnPrimaryResult = nullptr;
@@ -192,20 +290,49 @@ protected:
 	UButton* BtnQuit = nullptr;
 
 	UPROPERTY()
+	UTextBlock* QuitResultLabel = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	UBorder* WavePanel = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	UBorder* ObjectivePanel = nullptr;
 
-	UPROPERTY()
+	UPROPERTY(meta = (BindWidgetOptional))
 	USizeBox* SideBarsBox = nullptr;
 
+	/** Merged fodder+soul bar under Objective (built in ApplyDesignerChrome). */
 	UPROPERTY()
+	UBorder* ResourceBarPanel = nullptr;
+
+	UPROPERTY()
+	UBorder* UnitCardRabbit = nullptr;
+	UPROPERTY()
+	UBorder* UnitCardChicken = nullptr;
+	UPROPERTY()
+	UBorder* UnitCardSheep = nullptr;
+	UPROPERTY()
+	UBorder* UnitCardPig = nullptr;
+
+	UPROPERTY()
+	UFont* HudFont = nullptr;
+
+	UPROPERTY()
+	UTexture2D* RoundPanelTexture = nullptr;
+
+	/** Screen-space world labels (Chicken Coop / Fodder Point) — Slate fonts stay sharp. */
+	UPROPERTY()
+	TArray<UTextBlock*> WorldLabelPool;
+
+	UPROPERTY(meta = (BindWidgetOptional))
 	UCanvasPanel* DialogueBottomChrome = nullptr;
 
 	// Upgrade toast (drops from top center)
 	UPROPERTY()
 	UBorder* UpgradeToastPanel = nullptr;
+
+	UPROPERTY()
+	UBorder* UpgradeToastTitlePlate = nullptr;
 
 	UPROPERTY()
 	UTextBlock* UpgradeToastTitleText = nullptr;
@@ -224,7 +351,8 @@ protected:
 	ERTSDialogueKind ActiveDialogueKind = ERTSDialogueKind::Intro;
 	int32 DialogueLineIndex = 0;
 	float UpgradeToastAge = 0.f;
-	float UpgradeToastRestY = 28.f;
+	/** Rest Y below the wave bar (updated in RefreshUpgradeToastRestY). */
+	float UpgradeToastRestY = 78.f;
 
 	TArray<FString> DialogueSpeakers;
 	TArray<FString> DialogueBodies;

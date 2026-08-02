@@ -3,17 +3,52 @@
 #include "RTSLaneSpline.h"
 #include "RTSResourceNode.h"
 #include "Components/SplineComponent.h"
-#include "DrawDebugHelpers.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "UObject/ConstructorHelpers.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 
 ARTSLaneSpline::ARTSLaneSpline()
 {
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.bCanEverTick = false;
 
 	Spline = CreateDefaultSubobject<USplineComponent>(TEXT("Spline"));
 	SetRootComponent(Spline);
 	Spline->SetMobility(EComponentMobility::Static);
+	Spline->SetDrawDebug(false);
+
+	HighlightSegments = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("HighlightSegments"));
+	HighlightSegments->SetupAttachment(Spline);
+	HighlightSegments->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HighlightSegments->SetCastShadow(false);
+	HighlightSegments->SetHiddenInGame(true);
+	HighlightSegments->SetMobility(EComponentMobility::Movable);
+
+	HighlightEnds = CreateDefaultSubobject<UInstancedStaticMeshComponent>(TEXT("HighlightEnds"));
+	HighlightEnds->SetupAttachment(Spline);
+	HighlightEnds->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HighlightEnds->SetCastShadow(false);
+	HighlightEnds->SetHiddenInGame(true);
+	HighlightEnds->SetMobility(EComponentMobility::Movable);
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	static ConstructorHelpers::FObjectFinder<UMaterialInterface> ShapeMat(TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+
+	if (CubeMesh.Succeeded())
+	{
+		HighlightSegments->SetStaticMesh(CubeMesh.Object);
+	}
+	if (SphereMesh.Succeeded())
+	{
+		HighlightEnds->SetStaticMesh(SphereMesh.Object);
+	}
+	if (ShapeMat.Succeeded())
+	{
+		HighlightSegments->SetMaterial(0, ShapeMat.Object);
+		HighlightEnds->SetMaterial(0, ShapeMat.Object);
+	}
 
 	// Default lane along +Y (matches camera yaw -90: "into the screen")
 	Spline->ClearSplinePoints(false);
@@ -25,6 +60,46 @@ ARTSLaneSpline::ARTSLaneSpline()
 void ARTSLaneSpline::BeginPlay()
 {
 	Super::BeginPlay();
+	EnsureHighlightAssets();
+	ClearHighlightMeshes();
+}
+
+void ARTSLaneSpline::EnsureHighlightAssets()
+{
+	if (bHighlightAssetsReady)
+	{
+		return;
+	}
+
+	UMaterialInterface* BaseMat = nullptr;
+	if (HighlightSegments)
+	{
+		BaseMat = HighlightSegments->GetMaterial(0);
+	}
+	if (!BaseMat && HighlightEnds)
+	{
+		BaseMat = HighlightEnds->GetMaterial(0);
+	}
+
+	if (BaseMat)
+	{
+		HighlightMID = UMaterialInstanceDynamic::Create(BaseMat, this);
+		if (HighlightMID)
+		{
+			// BasicShapeMaterial exposes "Color"
+			HighlightMID->SetVectorParameterValue(TEXT("Color"), HighlightColor);
+			if (HighlightSegments)
+			{
+				HighlightSegments->SetMaterial(0, HighlightMID);
+			}
+			if (HighlightEnds)
+			{
+				HighlightEnds->SetMaterial(0, HighlightMID);
+			}
+		}
+	}
+
+	bHighlightAssetsReady = true;
 }
 
 void ARTSLaneSpline::SetHighlighted(bool bInHighlighted)
@@ -33,31 +108,38 @@ void ARTSLaneSpline::SetHighlighted(bool bInHighlighted)
 	{
 		return;
 	}
+
 	bHighlighted = bInHighlighted;
-	SetActorTickEnabled(bHighlighted);
-	if (Spline)
-	{
-		Spline->SetDrawDebug(bHighlighted);
-	}
 	if (bHighlighted)
 	{
-		DrawHighlight();
+		RebuildHighlightMeshes();
+	}
+	else
+	{
+		ClearHighlightMeshes();
 	}
 }
 
-void ARTSLaneSpline::Tick(float DeltaSeconds)
+void ARTSLaneSpline::ClearHighlightMeshes()
 {
-	Super::Tick(DeltaSeconds);
-	if (bHighlighted)
+	if (HighlightSegments)
 	{
-		DrawHighlight();
+		HighlightSegments->ClearInstances();
+		HighlightSegments->SetHiddenInGame(true);
+	}
+	if (HighlightEnds)
+	{
+		HighlightEnds->ClearInstances();
+		HighlightEnds->SetHiddenInGame(true);
 	}
 }
 
-void ARTSLaneSpline::DrawHighlight() const
+void ARTSLaneSpline::RebuildHighlightMeshes()
 {
-	UWorld* World = GetWorld();
-	if (!World || !Spline)
+	EnsureHighlightAssets();
+	ClearHighlightMeshes();
+
+	if (!Spline || !HighlightSegments || !HighlightEnds)
 	{
 		return;
 	}
@@ -68,24 +150,45 @@ void ARTSLaneSpline::DrawHighlight() const
 		return;
 	}
 
-	const FColor Color = HighlightColor.ToFColor(true);
-	constexpr float Step = 80.f;
-	FVector Prev = GetLocationAtDistance(0.f) + FVector(0.f, 0.f, 40.f);
-	for (float D = Step; D <= Len; D += Step)
+	if (HighlightMID)
 	{
-		const FVector Next = GetLocationAtDistance(D) + FVector(0.f, 0.f, 40.f);
-		DrawDebugLine(World, Prev, Next, Color, false, -1.f, 0, HighlightThickness);
-		Prev = Next;
-	}
-	const FVector End = GetLocationAtDistance(Len) + FVector(0.f, 0.f, 40.f);
-	if (!Prev.Equals(End, 1.f))
-	{
-		DrawDebugLine(World, Prev, End, Color, false, -1.f, 0, HighlightThickness);
+		HighlightMID->SetVectorParameterValue(TEXT("Color"), HighlightColor);
 	}
 
-	// End markers so the lane reads clearly from top-down camera
-	DrawDebugSphere(World, GetLocationAtDistance(0.f) + FVector(0.f, 0.f, 40.f), 35.f, 8, Color, false, -1.f, 0, 2.f);
-	DrawDebugSphere(World, End, 35.f, 8, Color, false, -1.f, 0, 2.f);
+	const FVector ZOff(0.f, 0.f, HighlightZOffset);
+	constexpr float Step = 80.f;
+	const float WidthScale = FMath::Max(HighlightThickness, 8.f) / 100.f;
+	const float HeightScale = FMath::Max(HighlightThickness * 0.25f, 4.f) / 100.f;
+
+	FVector Prev = GetLocationAtDistance(0.f) + ZOff;
+	for (float D = Step; D <= Len + KINDA_SMALL_NUMBER; D += Step)
+	{
+		const float Dist = FMath::Min(D, Len);
+		const FVector Next = GetLocationAtDistance(Dist) + ZOff;
+		const FVector Delta = Next - Prev;
+		const float SegLen = Delta.Size();
+		if (SegLen > 1.f)
+		{
+			const FVector Mid = (Prev + Next) * 0.5f;
+			const FRotator Rot = Delta.Rotation();
+			const FVector Scale(SegLen / 100.f, WidthScale, HeightScale);
+			// World positions — AddInstance is local-space and would offset with the spline actor.
+			HighlightSegments->AddInstanceWorldSpace(FTransform(Rot, Mid, Scale));
+		}
+		Prev = Next;
+		if (Dist >= Len)
+		{
+			break;
+		}
+	}
+
+	const float EndScale = FMath::Max(HighlightThickness, 20.f) / 50.f;
+	const FVector EndScale3(EndScale);
+	HighlightEnds->AddInstanceWorldSpace(FTransform(FRotator::ZeroRotator, GetLocationAtDistance(0.f) + ZOff, EndScale3));
+	HighlightEnds->AddInstanceWorldSpace(FTransform(FRotator::ZeroRotator, GetLocationAtDistance(Len) + ZOff, EndScale3));
+
+	HighlightSegments->SetHiddenInGame(false);
+	HighlightEnds->SetHiddenInGame(false);
 }
 
 float ARTSLaneSpline::GetSplineLength() const

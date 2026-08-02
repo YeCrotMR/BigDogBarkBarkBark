@@ -532,7 +532,8 @@ void ARTSUnitBase::TickMovement(float DeltaSeconds)
 			{
 				DistanceAlongSpline = LaneLen;
 				bReachedLaneEnd = true;
-				SplineTravelDir = -1.f;
+				// Keep facing along the advance direction while guarding at the far end.
+				SplineTravelDir = 1.f;
 				EnterState(ERTSUnitState::Guarding);
 			}
 		}

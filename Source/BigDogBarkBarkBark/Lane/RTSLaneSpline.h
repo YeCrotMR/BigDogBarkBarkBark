@@ -7,6 +7,9 @@
 #include "RTSLaneSpline.generated.h"
 
 class USplineComponent;
+class UInstancedStaticMeshComponent;
+class UMaterialInterface;
+class UMaterialInstanceDynamic;
 class ARTSResourceNode;
 
 UCLASS()
@@ -20,14 +23,26 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Lane")
 	USplineComponent* Spline;
 
+	/** Runtime-visible lane highlight (works in packaged builds; DrawDebug does not). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Lane|Highlight")
+	UInstancedStaticMeshComponent* HighlightSegments;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "RTS|Lane|Highlight")
+	UInstancedStaticMeshComponent* HighlightEnds;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane")
 	int32 LaneIndex = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane|Highlight")
 	FLinearColor HighlightColor = FLinearColor(0.2f, 0.95f, 1.f, 1.f);
 
+	/** World-unit width of the highlight ribbon. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane|Highlight")
-	float HighlightThickness = 12.f;
+	float HighlightThickness = 40.f;
+
+	/** Lift highlight above the ground so it stays readable top-down. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "RTS|Lane|Highlight")
+	float HighlightZOffset = 40.f;
 
 	UFUNCTION(BlueprintCallable, Category = "RTS|Lane")
 	float GetSplineLength() const;
@@ -58,12 +73,17 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-	virtual void Tick(float DeltaSeconds) override;
 
-	void DrawHighlight() const;
+	void EnsureHighlightAssets();
+	void RebuildHighlightMeshes();
+	void ClearHighlightMeshes();
 
 	UPROPERTY()
 	TArray<TWeakObjectPtr<ARTSResourceNode>> ResourceNodes;
 
+	UPROPERTY()
+	UMaterialInstanceDynamic* HighlightMID = nullptr;
+
 	bool bHighlighted = false;
+	bool bHighlightAssetsReady = false;
 };
